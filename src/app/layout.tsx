@@ -5,8 +5,8 @@ import "./globals.css";
 const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
 
 export const metadata: Metadata = {
-  title: "Gig Protect | Parametric Insurance",
-  description: "AI-powered parametric insurance platform for food delivery gig workers.",
+  title: "WageLock | Parametric Income Protection",
+  description: "Automated, parametric income protection for gig delivery workers. Zero claims. Zero paperwork.",
 };
 
 export default function RootLayout({
