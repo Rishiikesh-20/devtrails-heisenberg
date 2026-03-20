@@ -574,13 +574,12 @@ Open [http://localhost:3000](http://localhost:3000) in your browser.
 
 ---
 
-## 📚 Insurance Model Addendum
+## 📚 Technical Reference Documents
 
-See **[docs/insurancemodel.md](./docs/insurancemodel.md)** for the full architecture-aligned specification, including:
+For the full architecture-aligned specification, algorithms, and real-world API details, please review our comprehensive documentation:
 
-- Parametric trigger flow mapped to `Arch.png`
-- Real-time decision path (Oracle → Fraud Engine → Wallet Manager)
-- Lifecycle clarification for the dynamic premium calculator vs. payout gate
-- Scope guardrails (income-loss only, no health/accident/vehicle coverage)
+- **[Insurance Model & Product Flow](./docs/insurancemodel.md)**: Full architecture-aligned specification, covering payout formula, tier features, and scope guardrails.
+- **[AI & ML Integration Plan](./docs/aiml.md)**: Detailed breakdown of the XGBoost risk engine, Fraud Risk Score (FRS) multi-gate pipeline, and the ML vs. Rules engineering boundary.
+- **[Parametric Triggers & Oracles](./docs/triggers.md)**: Specifications for the exact conditions, severity factors, and external APIs (OpenWeatherMap, Google Routes, GDELT, Downdetector) powering the 5 disruption events.
 
 
