@@ -30,7 +30,9 @@
 11. [Tech Stack](#-tech-stack)
 12. [Platform Justification — Why a PWA?](#-platform-justification--why-a-pwa)
 13. [Development Plan](#-development-plan)
-14. [Getting Started](#-getting-started)
+14. [Documentation](#-documentation)
+15. [Project Structure](#-project-structure)
+16. [Getting Started](#-getting-started)
 
 ---
 
@@ -449,31 +451,88 @@ We chose a **Progressive Web App** over a native mobile app for three compelling
 
 ## 📅 Development Plan
 
-### Phase 1 — Ideation & Research *(Current — Due March 20)*
+### Phase 1 — Ideation & Research *Complete*
 - [x] Define persona-based scenarios and application workflow
 - [x] Design weekly premium model with parametric triggers
 - [x] Architect AI/ML integration plan (Risk Engine + FRS)
 - [x] Finalize tech stack and system architecture
-- [x] Publish Idea Document (this README)
+- [x] Publish Idea Document (this README) + full documentation suite (`docs/`)
 
-### Phase 2 — Core Platform Build
-- [ ] Set up Next.js PWA with Tailwind CSS and Zustand
-- [ ] Build the rider onboarding and authentication flow (Supabase)
-- [ ] Implement the AI Risk Tier Assignment engine (XGBoost + H3 Grids)
-- [ ] Develop the Parametric Oracle Engine (Go backend + 10-min polling)
-- [ ] Integrate weather, traffic, and news data sources
+### Phase 2 — Frontend & Demo  *Protoype Done*
+- [x] Set up Next.js 15 PWA with Tailwind CSS (App Router)
+- [x] Landing page (`/`) — Hero, Problem Statement, Personas, Parametric Oracles sections
+- [x] Three.js WebGL particle-network animated background
+- [x] Interactive mock demo dashboard (`/demo`):
+  - Wallet balance panel with live-update on claim simulation
+  - Dynamic weekly premium card with AI Risk Assessment trigger
+  - Covered Disruptions panel (5 event types)
+  - On-Chain Audit Trail with mock payout history
+  - Predictive Risk Alert banner
+  - Developer Mock Controls (bottom bar) — simulate any disruption scenario
+- [x] `PredictiveAlertBanner`, `AuditTrail`, `ThreeBackground` component library
 
-### Phase 3 — Payout & Fraud Engine
-- [ ] Build payout calculation pipeline (3-step formula)
-- [ ] Implement the 4-Gate Fraud Risk Score system
-- [ ] Integrate Razorpay/Stripe sandbox for UPI payouts
-- [ ] Develop zone-level anomaly detection and stop-loss reinsurance triggers
+### Phase 3 — Core Backend & Oracle Engine
+- [ ] Go backend — Gin REST API skeleton + `robfig/cron` 10-minute Oracle poller
+- [ ] Supabase authentication (OAuth + OTP via SMS/WhatsApp)
+- [ ] Parametric Oracle Engine — integrate OpenWeatherMap, TomTom, NewsAPI, Downdetector
+- [ ] Rider onboarding flow with zone GPS validation and 48-hr waiting period enforcement
 
-### Phase 4 — Polish & Deployment
-- [ ] Admin dashboard for monitoring claims, fraud flags, and pool health
+### Phase 4 — AI/ML & Payout Engine
+- [ ] XGBoost Risk Tier classifier with H3 hexagonal zone features
+- [ ] 4-Gate Fraud Risk Score pipeline (Rule → Velocity → Isolation Forest → Graph)
+- [ ] 3-step payout calculation with daily/weekly cap enforcement
+- [ ] Razorpay/Stripe sandbox UPI payout integration
+- [ ] Zone-level anomaly freeze + aggregate stop-loss reinsurance webhook
+
+### Phase 5 — Polish & Deployment
+- [ ] Admin dashboard — claims monitor, FRS flag queue, premium pool health
 - [ ] Load testing and performance optimization
-- [ ] End-to-end demo with simulated disruption scenarios
-- [ ] Final documentation and presentation
+- [ ] End-to-end demo with simulated disruption scenarios using live mock data
+- [ ] Final documentation and presentation deck
+
+---
+
+## 📚 Documentation
+
+All project documentation lives in the [`docs/`](./docs/) folder.
+
+| Document | Description |
+| :--- | :--- |
+| [insurancemodel.md](./docs/insurancemodel.md) | Full insurance product specification — tiers, triggers, payout formula, fraud controls, SLAs, architecture mapping |
+| [aiml.md](./docs/aiml.md) | AI/ML Integration Plan — XGBoost risk engine, FRS pipeline (F1–F5), ML vs Rules boundary, dual-engine architecture |
+| [triggers.md](./docs/triggers.md) | Parametric Trigger Rules & Real-World APIs — trigger conditions, severity factors, and API details for all 5 scenarios |
+| [InsuranceModal.docx](./docs/originals/InsuranceModal.docx) | Original formal insurance model (source DOCX) |
+| [AIModal.docx](./docs/originals/AIModal.docx) | Original AI/ML specification (source DOCX) |
+| [trigger.docx](./docs/originals/trigger.docx) | Original triggers specification (source DOCX) |
+
+---
+
+## 📁 Project Structure
+
+```
+devtrails-heisenberg/
+├── src/
+│   ├── app/
+│   │   ├── page.tsx              # Landing page — Hero, Problem, Personas, Oracles
+│   │   ├── demo/
+│   │   │   └── page.tsx          # Interactive mock dashboard with simulation controls
+│   │   ├── globals.css           # Design tokens, glassmorphism, animations
+│   │   └── layout.tsx            # Root layout
+│   └── components/
+│       ├── ThreeBackground.tsx   # Three.js WebGL particle-network background
+│       ├── PredictiveAlertBanner.tsx  # Dismissible risk forecast banner
+│       └── AuditTrail.tsx        # On-chain audit trail with mock payout history
+├── docs/
+│   ├── insurancemodel.md         # Insurance product specification (Markdown)
+│   ├── aiml.md                   # AI/ML Integration Plan (Markdown)
+│   ├── triggers.md               # Parametric Trigger Rules & APIs (Markdown)
+│   └── originals/
+│       ├── InsuranceModal.docx   # Original insurance model (source DOCX)
+│       ├── AIModal.docx          # Original AI/ML spec (source DOCX)
+│       └── trigger.docx          # Original triggers spec (source DOCX)
+├── Arch.png                      # System architecture diagram
+└── README.md                     # This file
+```
 
 ---
 
@@ -498,7 +557,12 @@ npm install
 npm run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) in your browser to see the application.
+Open [http://localhost:3000](http://localhost:3000) in your browser.
+
+| Route | Description |
+| :--- | :--- |
+| `/` | Landing page — product overview, personas, and oracle explainer |
+| `/demo` | Interactive mock dashboard — simulate disruptions and watch payouts fire |
 
 ---
 
@@ -506,6 +570,17 @@ Open [http://localhost:3000](http://localhost:3000) in your browser to see the a
 
 **Built with ☕ and conviction by Team DevTrails**
 
-*Hackathon Phase 1 Submission — March 2026*
-
 </div>
+
+---
+
+## 📚 Insurance Model Addendum
+
+See **[docs/insurancemodel.md](./docs/insurancemodel.md)** for the full architecture-aligned specification, including:
+
+- Parametric trigger flow mapped to `Arch.png`
+- Real-time decision path (Oracle → Fraud Engine → Wallet Manager)
+- Lifecycle clarification for the dynamic premium calculator vs. payout gate
+- Scope guardrails (income-loss only, no health/accident/vehicle coverage)
+
+
