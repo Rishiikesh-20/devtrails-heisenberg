@@ -31,8 +31,7 @@
 12. [Platform Justification — Why a PWA?](#-platform-justification--why-a-pwa)
 13. [Development Plan](#-development-plan)
 14. [Documentation](#-documentation)
-15. [Project Structure](#-project-structure)
-16. [Getting Started](#-getting-started)
+15. [Getting Started](#-getting-started)
 
 ---
 
@@ -504,35 +503,6 @@ All project documentation lives in the [`docs/`](./docs/) folder.
 | [InsuranceModal.docx](./docs/originals/InsuranceModal.docx) | Original formal insurance model (source DOCX) |
 | [AIModal.docx](./docs/originals/AIModal.docx) | Original AI/ML specification (source DOCX) |
 | [trigger.docx](./docs/originals/trigger.docx) | Original triggers specification (source DOCX) |
-
----
-
-## 📁 Project Structure
-
-```
-devtrails-heisenberg/
-├── src/
-│   ├── app/
-│   │   ├── page.tsx              # Landing page — Hero, Problem, Personas, Oracles
-│   │   ├── demo/
-│   │   │   └── page.tsx          # Interactive mock dashboard with simulation controls
-│   │   ├── globals.css           # Design tokens, glassmorphism, animations
-│   │   └── layout.tsx            # Root layout
-│   └── components/
-│       ├── ThreeBackground.tsx   # Three.js WebGL particle-network background
-│       ├── PredictiveAlertBanner.tsx  # Dismissible risk forecast banner
-│       └── AuditTrail.tsx        # On-chain audit trail with mock payout history
-├── docs/
-│   ├── insurancemodel.md         # Insurance product specification (Markdown)
-│   ├── aiml.md                   # AI/ML Integration Plan (Markdown)
-│   ├── triggers.md               # Parametric Trigger Rules & APIs (Markdown)
-│   └── originals/
-│       ├── InsuranceModal.docx   # Original insurance model (source DOCX)
-│       ├── AIModal.docx          # Original AI/ML spec (source DOCX)
-│       └── trigger.docx          # Original triggers spec (source DOCX)
-├── Arch.png                      # System architecture diagram
-└── README.md                     # This file
-```
 
 ---
 
