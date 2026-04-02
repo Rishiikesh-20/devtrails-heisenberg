@@ -3,13 +3,16 @@ package main
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -46,6 +49,7 @@ type User struct {
 	Zone          string    `gorm:"index;not null" json:"zone"`
 	ShiftStart    string    `gorm:"not null" json:"shift_start"`
 	ShiftEnd      string    `gorm:"not null" json:"shift_end"`
+	ShiftStatus   string    `gorm:"index;not null;default:'inactive'" json:"shift_status"`
 	Active        bool      `gorm:"index;default:true" json:"active"`
 	RiskTier      int       `gorm:"not null;default:3" json:"risk_tier"`
 	WeeklyPremium float64   `gorm:"type:numeric(10,2);not null;default:0" json:"weekly_premium"`
@@ -73,10 +77,11 @@ type tierResponse struct {
 }
 
 type disruptionEvent struct {
-	EventID   string  `json:"event_id"`
-	Zone      string  `json:"zone"`
-	EventType string  `json:"event_type"`
-	Severity  float64 `json:"severity"`
+	EventID        string  `json:"event_id"`
+	EventType      string  `json:"event_type"`
+	Zone           string  `json:"zone"`
+	SeverityFactor float64 `json:"severity_factor"`
+	Timestamp      int64   `json:"timestamp"`
 }
 
 type frsRequest struct {
@@ -94,6 +99,24 @@ type frsRequest struct {
 type frsResponse struct {
 	FRSScore int    `json:"frs_score"`
 	Status   string `json:"status"`
+}
+
+type verifyClaimItem struct {
+	UserID             string  `json:"user_id"`
+	EventType          string  `json:"event_type"`
+	EventTimestamp     int64   `json:"event_timestamp"`
+	Zone               string  `json:"zone"`
+	ClaimedAmount      float64 `json:"claimed_amount"`
+	AvgWeeklyEarnings  float64 `json:"avg_weekly_earnings"`
+	RecentClaims       int     `json:"recent_claims"`
+	SharedDeviceCount  int     `json:"shared_device_count"`
+	LinkedAccountCount int     `json:"linked_account_count"`
+}
+
+type ClaimDecision struct {
+	UserID   string `json:"user_id"`
+	FRSScore int    `json:"frs_score"`
+	Decision string `json:"decision"`
 }
 
 func main() {
@@ -201,6 +224,7 @@ func (a *App) registerUser(c *gin.Context) {
 		Zone:          req.Zone,
 		ShiftStart:    req.ShiftStart,
 		ShiftEnd:      req.ShiftEnd,
+		ShiftStatus:   "active",
 		Active:        true,
 		RiskTier:      tier,
 		WeeklyPremium: premium,
@@ -306,7 +330,7 @@ func (a *App) consumeDisruptionEvents(ctx context.Context) {
 
 func (a *App) processDisruptionEvent(ctx context.Context, event disruptionEvent) error {
 	var users []User
-	if err := a.db.WithContext(ctx).Where("zone = ? AND active = ?", event.Zone, true).Find(&users).Error; err != nil {
+	if err := a.db.WithContext(ctx).Where("zone = ? AND shift_status = ?", event.Zone, "active").Find(&users).Error; err != nil {
 		return err
 	}
 
@@ -315,30 +339,165 @@ func (a *App) processDisruptionEvent(ctx context.Context, event disruptionEvent)
 		return nil
 	}
 
+	batch := make([]verifyClaimItem, 0, len(users))
 	for _, u := range users {
-		claimHash := fmt.Sprintf("event:%s:user:%s", event.EventID, u.ID)
-		reqPayload := frsRequest{
-			ClaimID:            uuid.NewString(),
-			ClaimHash:          claimHash,
+		batch = append(batch, verifyClaimItem{
 			UserID:             u.ID,
+			EventType:          event.EventType,
+			EventTimestamp:     event.Timestamp,
 			Zone:               u.Zone,
-			ClaimedAmount:      220 + event.Severity*40,
+			ClaimedAmount:      220 + event.SeverityFactor*40,
 			AvgWeeklyEarnings:  700,
 			RecentClaims:       1,
 			SharedDeviceCount:  0,
 			LinkedAccountCount: 0,
+		})
+	}
+
+	decisions, err := a.callVerifyClaims(ctx, batch)
+	if err != nil {
+		return fmt.Errorf("verify-claims failed event_id=%s: %w", event.EventID, err)
+	}
+
+	autoApproved := make([]ClaimDecision, 0, len(decisions))
+	for _, claim := range decisions {
+		if err := RecordClaim(a.db.WithContext(ctx), event.EventID, claim); err != nil {
+			log.Printf("record-claim failed event_id=%s user=%s err=%v", event.EventID, claim.UserID, err)
 		}
 
-		resp, err := a.callEvaluateFRS(ctx, reqPayload)
-		if err != nil {
-			log.Printf("evaluate-frs failed user=%s err=%v", u.ID, err)
+		switch strings.ToUpper(strings.TrimSpace(claim.Decision)) {
+		case "AUTO-APPROVE":
+			autoApproved = append(autoApproved, claim)
+		case "FULL_WITHHOLD", "PARTIAL_HOLD":
+			log.Printf("claim held user=%s frs_score=%d decision=%s", claim.UserID, claim.FRSScore, claim.Decision)
+		default:
+			log.Printf("claim decision unrecognized user=%s frs_score=%d decision=%s", claim.UserID, claim.FRSScore, claim.Decision)
+		}
+	}
+
+	for _, claim := range autoApproved {
+		log.Printf("claim routed to payout user=%s score=%d decision=%s", claim.UserID, claim.FRSScore, claim.Decision)
+	}
+	log.Printf("event_id=%s routed %d claims to payout", event.EventID, len(autoApproved))
+
+	sqlDB, err := a.db.DB()
+	if err != nil {
+		return fmt.Errorf("get sql db handle: %w", err)
+	}
+
+	for _, claim := range autoApproved {
+		if err := ProcessPayout(sqlDB, claim.UserID); err != nil {
+			log.Printf("payout handoff failed user=%s event_id=%s err=%v", claim.UserID, event.EventID, err)
 			continue
 		}
-
-		log.Printf("frs-evaluated user=%s zone=%s score=%d status=%s", u.ID, u.Zone, resp.FRSScore, resp.Status)
 	}
 
 	return nil
+}
+
+func (a *App) callVerifyClaims(ctx context.Context, batch []verifyClaimItem) ([]ClaimDecision, error) {
+	body, err := json.Marshal(batch)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, a.cfg.AIEngineURL+"/verify-claims", bytes.NewBuffer(body))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := a.httpClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("verify-claims returned status %d", resp.StatusCode)
+	}
+
+	rawBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("read verify-claims response: %w", err)
+	}
+
+	var decisions []ClaimDecision
+	if err := json.Unmarshal(rawBody, &decisions); err != nil {
+		return nil, fmt.Errorf("unmarshal verify-claims response: %w", err)
+	}
+
+	return decisions, nil
+}
+
+func RecordClaim(db *gorm.DB, eventID string, claim ClaimDecision) error {
+	normalizedDecision := strings.ToUpper(strings.TrimSpace(claim.Decision))
+	status := mapClaimStatus(normalizedDecision)
+
+	query := `
+		INSERT INTO claims (event_id, user_id, frs_score, decision, status, created_at)
+		VALUES ($1, $2, $3, $4, $5, $6)
+	`
+
+	if err := db.Exec(
+		query,
+		eventID,
+		claim.UserID,
+		claim.FRSScore,
+		normalizedDecision,
+		status,
+		time.Now().UTC(),
+	).Error; err != nil {
+		return fmt.Errorf("insert claim user=%s: %w", claim.UserID, err)
+	}
+
+	return nil
+}
+
+func mapClaimStatus(decision string) string {
+	switch decision {
+	case "AUTO-APPROVE":
+		return "pending_payout"
+	case "FULL_WITHHOLD", "PARTIAL_HOLD":
+		return "investigating"
+	default:
+		return "investigating"
+	}
+}
+
+func ProcessPayout(db *sql.DB, userID string) error {
+	// Phase 2 stub for Member 5 handoff.
+	// Replace this ledger update with the final payout orchestrator implementation.
+	if _, err := db.Exec(
+		"UPDATE ledgers SET balance = balance + 360 WHERE user_id = $1;",
+		userID,
+	); err != nil {
+		return fmt.Errorf("update ledger user=%s: %w", userID, err)
+	}
+
+	log.Printf("SUCCESS: Handed off user %s for payout. Ledger updated.", userID)
+	return nil
+}
+
+func ParseAndRouteClaims(raw []byte) ([]ClaimDecision, error) {
+	var decisions []ClaimDecision
+	if err := json.Unmarshal(raw, &decisions); err != nil {
+		return nil, err
+	}
+
+	autoApproved := make([]ClaimDecision, 0, len(decisions))
+	for _, claim := range decisions {
+		switch strings.ToUpper(strings.TrimSpace(claim.Decision)) {
+		case "AUTO-APPROVE":
+			autoApproved = append(autoApproved, claim)
+		case "FULL_WITHHOLD", "PARTIAL_HOLD":
+			log.Printf("claim held user=%s frs_score=%d decision=%s", claim.UserID, claim.FRSScore, claim.Decision)
+		default:
+			log.Printf("claim decision unrecognized user=%s frs_score=%d decision=%s", claim.UserID, claim.FRSScore, claim.Decision)
+		}
+	}
+
+	return autoApproved, nil
 }
 
 func (a *App) callEvaluateFRS(ctx context.Context, payload frsRequest) (*frsResponse, error) {
