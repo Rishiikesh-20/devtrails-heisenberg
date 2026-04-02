@@ -7,7 +7,7 @@ const steps = [
     number: "01",
     icon: (
       <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#2563EB" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/>
+        <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" />
       </svg>
     ),
     title: "Activate Weekly Protection",
@@ -20,8 +20,8 @@ const steps = [
     number: "02",
     icon: (
       <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#14B8A6" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
-        <circle cx="12" cy="12" r="3"/>
+        <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+        <circle cx="12" cy="12" r="3" />
       </svg>
     ),
     title: "System Monitors Disruptions",
@@ -34,8 +34,8 @@ const steps = [
     number: "03",
     icon: (
       <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#8B5CF6" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-        <rect x="2" y="5" width="20" height="14" rx="2"/>
-        <line x1="2" y1="10" x2="22" y2="10"/>
+        <rect x="2" y="5" width="20" height="14" rx="2" />
+        <line x1="2" y1="10" x2="22" y2="10" />
       </svg>
     ),
     title: "Automatic Payout",
@@ -79,13 +79,13 @@ export function HowItWorks() {
               Simple, automatic protection that works in the background while you focus on deliveries
             </p>
           </div>
-          <div className="mt-6 h-px bg-gradient-to-r from-transparent via-gray-200 to-transparent"/>
+          <div className="mt-6 h-px bg-gradient-to-r from-transparent via-gray-200 to-transparent" />
         </div>
 
         {/* Steps */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 relative">
           {/* Connecting line on desktop */}
-          <div className="hidden md:block absolute top-[52px] left-[calc(16.67%+32px)] right-[calc(16.67%+32px)] h-px border-t border-dashed border-gray-200"/>
+          <div className="hidden md:block absolute top-[52px] left-[calc(16.67%+32px)] right-[calc(16.67%+32px)] h-px border-t border-dashed border-gray-200" />
 
           {steps.map((step, i) => (
             <div
