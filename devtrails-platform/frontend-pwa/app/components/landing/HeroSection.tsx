@@ -53,19 +53,17 @@ export function HeroSection() {
               </a>
             </div>
 
-            {/* Platform logos — like Finpay's Klarna/Coinbase row */}
+            {/* Platform logos — realistic wordmarks */}
             <div>
               <p className="text-white/25 text-[11px] uppercase tracking-widest font-medium mb-4">Verified on platforms</p>
-              <div className="flex items-center gap-5 flex-wrap">
+              <div className="flex items-center gap-7 flex-wrap">
                 {platforms.map((p) => (
-                  <div key={p.name} className="flex items-center gap-2 group">
-                    <div
-                      className="w-6 h-6 rounded-md flex items-center justify-center opacity-50 group-hover:opacity-80 transition-opacity"
-                      style={{ backgroundColor: p.color + "22", border: `1px solid ${p.color}40` }}
-                    >
-                      <span className="text-[8px] font-black" style={{ color: p.color }}>{p.name[0]}</span>
-                    </div>
-                    <span className="text-white/35 text-xs font-medium group-hover:text-white/60 transition-colors">{p.name}</span>
+                  <div key={p.name} className="flex items-center group opacity-50 hover:opacity-100 transition-opacity drop-shadow-md">
+                    <svg height="24" width="auto" viewBox={`0 0 ${p.name.length * 14} 24`} className="h-5 md:h-6 w-auto" style={{ fill: p.color }}>
+                      <text x="0" y="18" fontFamily="Arial, Helvetica, sans-serif" fontWeight="900" fontStyle={p.name === 'Zomato' ? 'italic' : 'normal'} fontSize="18" letterSpacing={p.name === 'ONDC' ? '1' : '-0.5'}>
+                        {p.name === 'Swiggy' ? 'SWIGGY' : p.name === 'ONDC' ? 'ONDC' : p.name.toLowerCase()}
+                      </text>
+                    </svg>
                   </div>
                 ))}
               </div>
@@ -73,15 +71,23 @@ export function HeroSection() {
           </div>
 
           {/* Right — Rider Illustration */}
-          <div className="hidden lg:flex justify-center items-center">
-            <Image
-              src="/images/delivery-rider.png"
-              alt="Delivery partner on a scooter"
-              width={440}
-              height={440}
-              className="object-contain drop-shadow-2xl"
-              priority
-            />
+          <div className="hidden lg:flex relative justify-center items-center w-full h-[600px]">
+            {/* Soft backdrop glow to make image pop */}
+            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[500px] h-[500px] bg-electric/20 rounded-full blur-[100px] pointer-events-none" />
+
+            <div 
+              className="relative z-10 w-full h-full flex justify-center items-center" 
+              style={{ maskImage: 'radial-gradient(circle at center, rgba(0,0,0,1) 50%, rgba(0,0,0,0) 80%)', WebkitMaskImage: 'radial-gradient(circle at center, rgba(0,0,0,1) 50%, rgba(0,0,0,0) 80%)' }}
+            >
+               <Image
+                 src="/images/delivery-rider.png"
+                 alt="Delivery partner on a scooter"
+                 width={550}
+                 height={550}
+                 className="object-contain drop-shadow-2xl"
+                 priority
+               />
+            </div>
           </div>
         </div>
       </div>
