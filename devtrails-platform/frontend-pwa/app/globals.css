@@ -2,6 +2,200 @@
 @tailwind components;
 @tailwind utilities;
 
-body {
-  font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif;
+/* ========== Base Resets ========== */
+@layer base {
+  html {
+    scroll-behavior: smooth;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+  
+  body {
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    color: #111827;
+    background-color: #F8FAFC;
+  }
+
+  ::selection {
+    background-color: rgba(37, 99, 235, 0.15);
+    color: #0B1F3A;
+  }
+}
+
+/* ========== Component Utilities ========== */
+@layer components {
+  /* Hero gradient background */
+  .hero-gradient {
+    background: linear-gradient(135deg, #0B1F3A 0%, #0F2847 40%, #132F52 70%, #162D4D 100%);
+  }
+
+  /* CTA section gradient */
+  .cta-gradient {
+    background: linear-gradient(135deg, #0B1F3A 0%, #0F2847 50%, #112544 100%);
+  }
+
+  /* Glassmorphism card */
+  .glass-card {
+    background: rgba(255, 255, 255, 0.06);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+  }
+
+  /* White card with premium feel */
+  .premium-card {
+    background: #FFFFFF;
+    border: 1px solid rgba(229, 231, 235, 0.6);
+    border-radius: 16px;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04), 0 1px 2px rgba(0, 0, 0, 0.06);
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  .premium-card:hover {
+    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.08), 0 4px 10px rgba(0, 0, 0, 0.04);
+    transform: translateY(-2px);
+  }
+
+  /* Risk level badges */
+  .badge-safe {
+    background: rgba(20, 184, 166, 0.1);
+    color: #0D9488;
+    border: 1px solid rgba(20, 184, 166, 0.2);
+  }
+
+  .badge-warning {
+    background: rgba(245, 158, 11, 0.1);
+    color: #D97706;
+    border: 1px solid rgba(245, 158, 11, 0.2);
+  }
+
+  .badge-danger {
+    background: rgba(239, 68, 68, 0.1);
+    color: #DC2626;
+    border: 1px solid rgba(239, 68, 68, 0.2);
+  }
+
+  /* Active status pill */
+  .status-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 14px;
+    border-radius: 9999px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+  }
+
+  .status-pill-active {
+    background: rgba(20, 184, 166, 0.15);
+    color: #14B8A6;
+    border: 1px solid rgba(20, 184, 166, 0.25);
+  }
+
+  /* Button styles */
+  .btn-primary {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 14px 28px;
+    background: #2563EB;
+    color: #FFFFFF;
+    font-weight: 600;
+    font-size: 0.9375rem;
+    border-radius: 12px;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    cursor: pointer;
+    border: none;
+  }
+  
+  .btn-primary:hover {
+    background: #1D4ED8;
+    transform: translateY(-1px);
+    box-shadow: 0 8px 20px rgba(37, 99, 235, 0.35);
+  }
+
+  .btn-primary:active {
+    transform: translateY(0);
+  }
+
+  .btn-secondary {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 14px 28px;
+    background: rgba(255, 255, 255, 0.08);
+    color: #FFFFFF;
+    font-weight: 600;
+    font-size: 0.9375rem;
+    border-radius: 12px;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    cursor: pointer;
+  }
+
+  .btn-secondary:hover {
+    background: rgba(255, 255, 255, 0.14);
+    border-color: rgba(255, 255, 255, 0.35);
+  }
+
+  /* Circular progress ring */
+  .progress-ring {
+    transform: rotate(-90deg);
+  }
+
+  /* Section spacing */
+  .section-spacing {
+    padding: 80px 0;
+  }
+
+  /* Step number badge */
+  .step-badge {
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    background: #2563EB;
+    color: #FFFFFF;
+    font-size: 0.75rem;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: absolute;
+    top: -8px;
+    right: -8px;
+  }
+}
+
+/* ========== Scroll Reveal ========== */
+/* Elements start invisible/shifted; JS adds data-inview="true" on scroll */
+@layer utilities {
+  .reveal {
+    opacity: 0;
+    transform: translateY(20px);
+    transition: opacity 0.6s cubic-bezier(0.22, 1, 0.36, 1), transform 0.6s cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  .reveal.is-visible {
+    opacity: 1;
+    transform: translateY(0);
+  }
+
+  .reveal-delay-1 { transition-delay: 100ms; }
+  .reveal-delay-2 { transition-delay: 200ms; }
+  .reveal-delay-3 { transition-delay: 300ms; }
+  .reveal-delay-4 { transition-delay: 400ms; }
+
+  /* Scale-in variant for cards */
+  .reveal-scale {
+    opacity: 0;
+    transform: scale(0.97) translateY(12px);
+    transition: opacity 0.5s cubic-bezier(0.22, 1, 0.36, 1), transform 0.5s cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  .reveal-scale.is-visible {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
 }
