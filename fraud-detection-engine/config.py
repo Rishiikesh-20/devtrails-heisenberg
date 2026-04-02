@@ -4,7 +4,7 @@ These values come directly from the project's aiml.md specification.
 """
 
 # ─── FRS Point Values ────────────────────────────────────────────────
-F1_GPS_SPOOFING_POINTS = 35        # Gate 2: GPS velocity anomaly
+F1_GPS_SPOOFING_POINTS = 85        # Gate 2: GPS velocity anomaly → FULL WITHHOLD
 F2_EARNINGS_INFLATION_POINTS = 20  # Gate 3: Earnings inflation
 F3_ACTIVITY_GAMING_HIGH_POINTS = 25  # Gate 3: Spike ratio > 2.0
 F3_ACTIVITY_GAMING_MED_POINTS = 12   # Gate 3: Spike ratio > 1.5

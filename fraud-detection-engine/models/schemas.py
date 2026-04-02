@@ -97,6 +97,48 @@ class FRSResult(BaseModel):
     timestamp: datetime = Field(default_factory=datetime.utcnow)
 
 
+# ─── Batch Models (for /verify-claims) ───────────────────────────────
+
+class BatchClaimItem(BaseModel):
+    """A single claim item in a batch request from the Go backend."""
+    worker_id: str = Field(..., description="Unique worker identifier")
+    device_id: Optional[str] = None
+    upi_id: Optional[str] = None
+    event_type: EventType
+    event_timestamp: datetime
+    policy_start_time: datetime
+    is_renewal: bool = False
+    zone_id: Optional[str] = None
+    # GPS data
+    gps_history: Optional[list[GPSPing]] = None
+    # Earnings data (for Gate 3)
+    avg_earnings_14d: Optional[float] = None
+    avg_earnings_4wk: Optional[float] = None
+    zone_90th_percentile: Optional[float] = None
+    deliveries_24hr_before_event: Optional[int] = None
+    rolling_avg_deliveries_24hr: Optional[float] = None
+
+
+class BatchClaimRequest(BaseModel):
+    """Batch of claims sent by the Go backend after a parametric trigger fires."""
+    claims: list[BatchClaimItem] = Field(..., min_length=1, description="List of worker claims to verify")
+    zone_claims_count: Optional[int] = Field(None, description="Total claims from this zone")
+    zone_historical_baseline: Optional[int] = Field(None, description="Historical avg claims for zone")
+
+
+class BatchFRSResultItem(BaseModel):
+    """Simplified per-worker result for batch response (matches Go backend expected format)."""
+    user_id: str
+    frs_score: int
+    decision: str
+
+
+class BatchFRSResponse(BaseModel):
+    """Full batch response with both simplified and detailed results."""
+    results: list[BatchFRSResultItem] = Field(..., description="Simplified results for Go backend")
+    detailed_results: list[FRSResult] = Field(..., description="Full gate-by-gate breakdown")
+
+
 # ─── Group Fraud Context (for Gate 4) ───────────────────────────────
 
 class GroupFraudWorker(BaseModel):
