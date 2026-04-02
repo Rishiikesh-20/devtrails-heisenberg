@@ -3,6 +3,8 @@ FRS Engine Configuration — All thresholds and constants.
 These values come directly from the project's aiml.md specification.
 """
 
+import os
+
 # ─── FRS Point Values ────────────────────────────────────────────────
 F1_GPS_SPOOFING_POINTS = 85        # Gate 2: GPS velocity anomaly → FULL WITHHOLD
 F2_EARNINGS_INFLATION_POINTS = 60  # Gate 3: Earnings 3× normal → FRS=60 (Partial Hold)
@@ -18,8 +20,8 @@ FRS_MAX_SCORE = 100
 POLICY_WAITING_PERIOD_HOURS = 48   # First-time policies must be 48hrs old
 
 # ─── Redis Configuration ─────────────────────────────────────────────
-REDIS_HOST = "localhost"
-REDIS_PORT = 6379
+REDIS_HOST = os.environ.get("REDIS_HOST", "localhost")
+REDIS_PORT = int(os.environ.get("REDIS_PORT", "6379"))
 REDIS_DB = 0
 REDIS_CLAIM_PREFIX = "frs:claim:"   # Key prefix for claim hashes
 REDIS_CLAIM_TTL_SECONDS = 86400    # 24 hours — claims expire after this
