@@ -1,0 +1,157 @@
+##############################################################################
+#  DevTrails Platform — Docker Compose (Infrastructure Layer)
+#  Kafka KRaft · PostgreSQL 15 · Redis 7 · ClickHouse
+##############################################################################
+
+services:
+
+  # ─────────────────────────────────────────────────────────────────────────
+  #  Apache Kafka — KRaft mode (NO Zookeeper)
+  # ─────────────────────────────────────────────────────────────────────────
+  kafka:
+    image: bitnami/kafka:latest
+    container_name: devtrails-kafka
+    ports:
+      - "9092:9092"        # External clients
+      - "9093:9093"        # Controller
+    environment:
+      # ── KRaft configuration ──────────────────────────────────────────────
+      KAFKA_ENABLE_KRAFT: "yes"
+      KAFKA_CFG_PROCESS_ROLES: "broker,controller"
+      KAFKA_CFG_NODE_ID: "1"
+      KAFKA_CFG_CONTROLLER_QUORUM_VOTERS: "1@kafka:9093"
+      KAFKA_KRAFT_CLUSTER_ID: "MkU3OEVBNTcwNTJENDM2Qk"
+
+      # ── Listener configuration ───────────────────────────────────────────
+      KAFKA_CFG_LISTENERS: "PLAINTEXT://:9092,CONTROLLER://:9093"
+      KAFKA_CFG_ADVERTISED_LISTENERS: "PLAINTEXT://kafka:9092"
+      KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP: "PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT"
+      KAFKA_CFG_CONTROLLER_LISTENER_NAMES: "CONTROLLER"
+      KAFKA_CFG_INTER_BROKER_LISTENER_NAME: "PLAINTEXT"
+
+      # ── Topic defaults ──────────────────────────────────────────────────
+      KAFKA_CFG_AUTO_CREATE_TOPICS_ENABLE: "true"
+      KAFKA_CFG_NUM_PARTITIONS: "3"
+      KAFKA_CFG_DEFAULT_REPLICATION_FACTOR: "1"
+      KAFKA_CFG_OFFSETS_TOPIC_REPLICATION_FACTOR: "1"
+      KAFKA_CFG_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: "1"
+      KAFKA_CFG_TRANSACTION_STATE_LOG_MIN_ISR: "1"
+
+      # ── Performance ─────────────────────────────────────────────────────
+      KAFKA_CFG_LOG_RETENTION_HOURS: "168"
+      KAFKA_CFG_LOG_SEGMENT_BYTES: "1073741824"
+
+      # ── Disable Zookeeper explicitly ─────────────────────────────────────
+      ALLOW_PLAINTEXT_LISTENER: "yes"
+    volumes:
+      - kafka_data:/bitnami/kafka
+    networks:
+      - devtrails-net
+    healthcheck:
+      test: ["CMD-SHELL", "kafka-broker-api-versions.sh --bootstrap-server localhost:9092 || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 30s
+
+  # ─────────────────────────────────────────────────────────────────────────
+  #  PostgreSQL 15 — Core relational state
+  # ─────────────────────────────────────────────────────────────────────────
+  postgres:
+    image: postgres:15-alpine
+    container_name: devtrails-postgres
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: devtrails
+      POSTGRES_PASSWORD: devtrails_secret
+      POSTGRES_DB: devtrails_core
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init-scripts/postgres:/docker-entrypoint-initdb.d
+    networks:
+      - devtrails-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U devtrails -d devtrails_core"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  # ─────────────────────────────────────────────────────────────────────────
+  #  Redis 7 — Caching & FRS Gate 1 (Duplicate Claim Hash)
+  # ─────────────────────────────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: devtrails-redis
+    ports:
+      - "6379:6379"
+    command: >
+      redis-server
+      --maxmemory 256mb
+      --maxmemory-policy allkeys-lru
+      --appendonly yes
+      --save 60 1000
+    volumes:
+      - redis_data:/data
+    networks:
+      - devtrails-net
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ─────────────────────────────────────────────────────────────────────────
+  #  ClickHouse — Time-series weather/traffic telemetry
+  # ─────────────────────────────────────────────────────────────────────────
+  clickhouse:
+    image: clickhouse/clickhouse-server:latest
+    container_name: devtrails-clickhouse
+    ports:
+      - "8123:8123"        # HTTP interface
+      - "9000:9000"        # Native TCP protocol
+    environment:
+      CLICKHOUSE_DB: devtrails_telemetry
+      CLICKHOUSE_USER: devtrails
+      CLICKHOUSE_PASSWORD: devtrails_ch_secret
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: "1"
+    volumes:
+      - clickhouse_data:/var/lib/clickhouse
+      - clickhouse_logs:/var/log/clickhouse-server
+      - ./init-scripts/clickhouse:/docker-entrypoint-initdb.d
+    networks:
+      - devtrails-net
+    healthcheck:
+      test: ["CMD-SHELL", "clickhouse-client --query 'SELECT 1' || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    ulimits:
+      nofile:
+        soft: 262144
+        hard: 262144
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  Volumes
+# ─────────────────────────────────────────────────────────────────────────────
+volumes:
+  kafka_data:
+    driver: local
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+  clickhouse_data:
+    driver: local
+  clickhouse_logs:
+    driver: local
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  Network
+# ─────────────────────────────────────────────────────────────────────────────
+networks:
+  devtrails-net:
+    driver: bridge
+    name: devtrails-network
