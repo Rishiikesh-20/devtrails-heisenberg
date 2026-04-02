@@ -23,11 +23,13 @@ from models.schemas import (
     ClaimRequest, FRSResult, GateResult,
     FRSDecision, EventType,
     BatchClaimRequest, BatchClaimItem, BatchFRSResponse, BatchFRSResultItem,
-    WorkerData, PolicyData
+    WorkerData, PolicyData,
+    GroupFraudRequest, GroupFraudWorker
 )
 from gates.gate1_bouncer import run_gate1, clear_claim_store, get_claim_store_size
 from gates.gate2_velocity import run_gate2
 from gates.gate3_outlier import run_gate3
+from gates.gate4_network import run_gate4_for_worker, run_gate4_batch, analyze_group_fraud
 from config import (
     AUTO_APPROVE_MAX, PARTIAL_HOLD_MAX, FRS_MAX_SCORE,
     DECISION_AUTO_APPROVE, DECISION_PARTIAL_HOLD, DECISION_FULL_WITHHOLD,
@@ -96,7 +98,7 @@ async def health_check():
         "status": "healthy",
         "service": "FRS Fraud Detection Engine",
         "version": "1.0.0",
-        "gates_active": ["Gate 1 — Bouncer", "Gate 2 — Speed Camera", "Gate 3 — Outlier Detector"],
+        "gates_active": ["Gate 1 — Bouncer", "Gate 2 — Speed Camera", "Gate 3 — Outlier Detector", "Gate 4 — Network Mapper"],
         "registered_claims": get_claim_store_size(),
         "timestamp": datetime.now(timezone.utc).isoformat()
     }
@@ -209,6 +211,44 @@ async def test_gate3(claim: ClaimRequest):
     )
 
 
+# ─── Gate 4 Endpoint (Batch Test) ───────────────────────────────
+
+@app.post(
+    "/api/v1/fraud/gate/4",
+    tags=["Individual Gates"],
+    summary="🔗 Gate 4 — The Network Mapper (Group Collusion AI)",
+    description=(
+        "Run **only Gate 4** on a batch of workers.\n\n"
+        "**Unlike Gates 1-3**, this gate requires a **batch of workers** "
+        "(not a single claim) because collusion is about relationships between workers.\n\n"
+        "**Checks performed:**\n"
+        "- **Shared Device ID:** Multiple accounts on the same phone\n"
+        "- **Shared UPI ID:** Multiple accounts paying to the same bank\n"
+        "- **GPS Co-Location:** Workers within 50 meters of each other\n\n"
+        "If cluster ≥ 5 workers → +20 FRS per flagged worker.\n\n"
+        "**Test it:** Send 6 workers sharing the same device_id!"
+    )
+)
+async def test_gate4(request: GroupFraudRequest):
+    """Test Gate 4 group fraud analysis on a batch of workers."""
+    analysis = analyze_group_fraud(request.workers)
+    per_worker_results = run_gate4_batch(request)
+
+    return {
+        "analysis_summary": {
+            "total_workers": len(request.workers),
+            "total_flagged": analysis["total_flagged"],
+            "device_clusters": analysis["device_clusters"],
+            "upi_clusters": analysis["upi_clusters"],
+            "gps_clusters": analysis["gps_clusters"],
+        },
+        "per_worker_results": {
+            wid: [r.model_dump() for r in results]
+            for wid, results in per_worker_results.items()
+        }
+    }
+
+
 # ─── Full FRS Pipeline ──────────────────────────────────────────────
 
 @app.post(
@@ -222,7 +262,7 @@ async def test_gate3(claim: ClaimRequest):
         "- ✅ Gate 1 — The Bouncer (Rule-Based Filters)\n"
         "- ✅ Gate 2 — Speed Camera (GPS Velocity AI)\n"
         "- ✅ Gate 3 — Outlier Detector (Earnings & Activity AI)\n"
-        "- 🔜 Gate 4 — Network Mapper (coming next)\n\n"
+        "- ✅ Gate 4 — Network Mapper (Group Collusion AI)\n\n"
         "**FRS = F1 + F2 + F3 + F5 + zone_anomaly_bonus**, capped at 100."
     )
 )
@@ -256,7 +296,18 @@ async def full_frs_pipeline(claim: ClaimRequest):
     gate3_results = run_gate3(claim)
     all_gate_results.extend(gate3_results)
 
-    # ── Gate 4 will be added here ──
+    # ── Gate 4: The Network Mapper ──
+    # Note: Gate 4 runs fully in /verify-claims (batch context).
+    # For single claims, we skip it since group fraud needs batch data.
+    all_gate_results.append(GateResult(
+        gate_name="Group Fraud Detection (F5)",
+        gate_id=4,
+        passed=True,
+        frs_points=0,
+        details="Gate 4 skipped for single claim. Group fraud analysis "
+                "requires batch context (use /verify-claims endpoint).",
+        hard_stop=False
+    ))
 
     # ── Zone Anomaly Bonus ──
     zone_bonus = 0
@@ -333,8 +384,33 @@ async def verify_claims_batch(batch: BatchClaimRequest):
     simplified_results: list[BatchFRSResultItem] = []
     detailed_results: list[FRSResult] = []
 
+    # ── Build Gate 4 batch context ──
+    # Convert all claims to GroupFraudWorker format for group fraud analysis
+    batch_workers = []
     for item in batch.claims:
-        # Convert BatchClaimItem → ClaimRequest (our internal format)
+        last_gps = None
+        if item.gps_history and len(item.gps_history) > 0:
+            last_gps = item.gps_history[-1]  # Use most recent GPS ping
+
+        batch_workers.append(GroupFraudWorker(
+            worker_id=item.worker_id,
+            device_id=item.device_id,
+            upi_id=item.upi_id,
+            latitude=last_gps.latitude if last_gps else None,
+            longitude=last_gps.longitude if last_gps else None,
+            claim_timestamp=item.event_timestamp,
+        ))
+
+    # Run Gate 4 batch analysis once (shared across all workers)
+    group_fraud_request = GroupFraudRequest(
+        workers=batch_workers,
+        event_type=batch.claims[0].event_type,
+        event_timestamp=batch.claims[0].event_timestamp,
+    )
+    gate4_results_by_worker = run_gate4_batch(group_fraud_request)
+
+    # ── Process each claim through Gates 1-3, then append Gate 4 ──
+    for item in batch.claims:
         claim = ClaimRequest(
             worker=WorkerData(
                 worker_id=item.worker_id,
@@ -358,18 +434,43 @@ async def verify_claims_batch(batch: BatchClaimRequest):
             zone_historical_baseline=batch.zone_historical_baseline,
         )
 
-        # Run the full pipeline on this claim
+        # Run Gates 1-3 via the full pipeline
         frs_result = await full_frs_pipeline(claim)
-        detailed_results.append(frs_result)
 
-        # Build simplified result (Go backend format)
+        # Replace the "Gate 4 skipped" placeholder with real Gate 4 results
+        gate_results_without_g4_placeholder = [
+            r for r in frs_result.gate_results
+            if not (r.gate_id == 4 and "skipped" in r.details.lower())
+        ]
+
+        # Add real Gate 4 results from batch analysis
+        worker_g4_results = gate4_results_by_worker.get(item.worker_id, [])
+        gate_results_without_g4_placeholder.extend(worker_g4_results)
+
+        # Recalculate total FRS with Gate 4 included
+        total_frs = sum(r.frs_points for r in gate_results_without_g4_placeholder)
+        total_frs = min(total_frs, FRS_MAX_SCORE)
+        decision, description = get_frs_decision(total_frs)
+
+        updated_result = FRSResult(
+            worker_id=item.worker_id,
+            event_type=claim.event_type,
+            frs_score=total_frs,
+            decision=decision,
+            decision_description=description,
+            gate_results=gate_results_without_g4_placeholder,
+            timestamp=datetime.now(timezone.utc),
+        )
+
+        detailed_results.append(updated_result)
         simplified_results.append(BatchFRSResultItem(
             user_id=item.worker_id,
-            frs_score=frs_result.frs_score,
-            decision=frs_result.decision.value,
+            frs_score=total_frs,
+            decision=decision.value,
         ))
 
     return BatchFRSResponse(
         results=simplified_results,
         detailed_results=detailed_results,
     )
+
