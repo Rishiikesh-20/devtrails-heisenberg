@@ -39,6 +39,24 @@ class FRSResponse(BaseModel):
     evaluated_at: str
 
 
+class VerifyClaimItem(BaseModel):
+    user_id: str = Field(..., min_length=1)
+    event_type: str = Field(..., min_length=1)
+    event_timestamp: int
+    zone: str = Field(..., min_length=1)
+    claimed_amount: float = Field(..., ge=0)
+    avg_weekly_earnings: float = Field(..., ge=0)
+    recent_claims: int = Field(0, ge=0)
+    shared_device_count: int = Field(0, ge=0)
+    linked_account_count: int = Field(0, ge=0)
+
+
+class ClaimDecision(BaseModel):
+    user_id: str
+    frs_score: int
+    decision: str
+
+
 app = FastAPI(title="DevTrails FRS and Risk Engine", version="0.2.0")
 
 
@@ -112,6 +130,60 @@ def evaluate_frs(payload: FRSRequest) -> FRSResponse:
         },
         evaluated_at=datetime.now(timezone.utc).isoformat(),
     )
+
+
+@app.post("/verify-claims", response_model=list[ClaimDecision])
+def verify_claims(batch: list[VerifyClaimItem]) -> list[ClaimDecision]:
+    results: list[ClaimDecision] = []
+
+    for item in batch:
+        score = evaluate_claim_score(
+            user_id=item.user_id,
+            claimed_amount=item.claimed_amount,
+            avg_weekly_earnings=item.avg_weekly_earnings,
+            recent_claims=item.recent_claims,
+            shared_device_count=item.shared_device_count,
+            linked_account_count=item.linked_account_count,
+        )
+
+        results.append(
+            ClaimDecision(
+                user_id=item.user_id,
+                frs_score=score,
+                decision=decision_from_score(score),
+            )
+        )
+
+    return results
+
+
+def evaluate_claim_score(
+    user_id: str,
+    claimed_amount: float,
+    avg_weekly_earnings: float,
+    recent_claims: int,
+    shared_device_count: int,
+    linked_account_count: int,
+) -> int:
+    claim_hash = hashlib.sha256(
+        f"{user_id}:{claimed_amount}:{recent_claims}".encode("utf-8")
+    ).hexdigest()
+
+    rdb = get_redis()
+    gate_1 = gate_duplicate_hash(rdb, claim_hash)
+    gate_2 = gate_velocity_check(rdb, user_id)
+    gate_3 = gate_earnings_outlier(claimed_amount, avg_weekly_earnings)
+    gate_4 = gate_network_cluster(shared_device_count, linked_account_count)
+
+    return min(100, gate_1 + gate_2 + gate_3 + gate_4)
+
+
+def decision_from_score(score: int) -> str:
+    if score <= 30:
+        return "AUTO-APPROVE"
+    if score <= 65:
+        return "PARTIAL_HOLD"
+    return "FULL_WITHHOLD"
 
 
 def gate_duplicate_hash(rdb: redis.Redis, claim_hash: str) -> int:
