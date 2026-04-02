@@ -5,20 +5,29 @@ Fast, deterministic first-pass that catches obvious fraud instantly.
 
 Two checks:
   F4 — Duplicate Claim Detection: SHA-256 hash of (worker_id + event_type + epoch_hour).
-        If hash already exists → FRS = 100, hard stop.
+        Stored in Redis using SETNX. If key already exists → FRS = 100, hard stop.
   Policy Age Check: First-time policies must be ≥48 hours old at event time.
         Renewals are exempt from this check.
 """
 
 import hashlib
+import redis
 from datetime import datetime, timezone
 from models.schemas import ClaimRequest, GateResult
-from config import POLICY_WAITING_PERIOD_HOURS, F4_DUPLICATE_CLAIM_SCORE
+from config import (
+    POLICY_WAITING_PERIOD_HOURS, F4_DUPLICATE_CLAIM_SCORE,
+    REDIS_HOST, REDIS_PORT, REDIS_DB, REDIS_CLAIM_PREFIX, REDIS_CLAIM_TTL_SECONDS
+)
 
 
-# ─── In-Memory Duplicate Store (simulates Redis SETNX) ──────────────
-# In production this would be Redis. For demo, we use an in-memory set.
-_claim_hashes: set[str] = set()
+# ─── Redis Connection ────────────────────────────────────────────────
+# Connects to the Redis instance running in Docker (port 6379)
+_redis_client = redis.Redis(
+    host=REDIS_HOST,
+    port=REDIS_PORT,
+    db=REDIS_DB,
+    decode_responses=True
+)
 
 
 def _compute_claim_hash(worker_id: str, event_type: str, event_timestamp: datetime) -> str:
@@ -37,9 +46,13 @@ def _compute_claim_hash(worker_id: str, event_type: str, event_timestamp: dateti
 
 def check_duplicate_claim(claim: ClaimRequest) -> GateResult:
     """
-    F4 — Duplicate Claim Detection.
+    F4 — Duplicate Claim Detection using Redis SETNX.
     If the same worker has already claimed for the same event type
     in the same hour window → FRS = 100, hard stop.
+
+    Uses Redis SETNX (SET if Not eXists):
+      - If key doesn't exist → sets it (returns True) → new claim
+      - If key exists → doesn't set (returns False) → DUPLICATE
     """
     claim_hash = _compute_claim_hash(
         worker_id=claim.worker.worker_id,
@@ -47,27 +60,32 @@ def check_duplicate_claim(claim: ClaimRequest) -> GateResult:
         event_timestamp=claim.event_timestamp
     )
 
-    if claim_hash in _claim_hashes:
+    redis_key = f"{REDIS_CLAIM_PREFIX}{claim_hash}"
+
+    # SETNX with TTL: returns True if key was set (new), False if it already exists (duplicate)
+    is_new = _redis_client.set(redis_key, "1", nx=True, ex=REDIS_CLAIM_TTL_SECONDS)
+
+    if not is_new:
+        # Key already existed → DUPLICATE CLAIM
         return GateResult(
-            gate_name="Duplicate Claim Detection (F4)",
+            gate_name="Duplicate Claim Detection (F4) [Redis]",
             gate_id=1,
             passed=False,
             frs_points=F4_DUPLICATE_CLAIM_SCORE,
-            details=f"DUPLICATE DETECTED — Claim hash {claim_hash[:16]}... already exists. "
+            details=f"DUPLICATE DETECTED — Redis key '{redis_key[:40]}...' already exists. "
                     f"Worker '{claim.worker.worker_id}' has already filed a "
                     f"'{claim.event_type.value}' claim in this time window.",
             hard_stop=True
         )
 
-    # Register this claim hash
-    _claim_hashes.add(claim_hash)
-
+    # New claim — registered in Redis with 24-hour TTL
     return GateResult(
-        gate_name="Duplicate Claim Detection (F4)",
+        gate_name="Duplicate Claim Detection (F4) [Redis]",
         gate_id=1,
         passed=True,
         frs_points=0,
-        details=f"No duplicate found. Claim hash {claim_hash[:16]}... registered.",
+        details=f"No duplicate found. Claim hash registered in Redis "
+                f"(TTL: {REDIS_CLAIM_TTL_SECONDS}s). Key: {redis_key[:40]}...",
         hard_stop=False
     )
 
@@ -130,7 +148,7 @@ def run_gate1(claim: ClaimRequest) -> list[GateResult]:
     """
     results = []
 
-    # Check 1: Duplicate claim
+    # Check 1: Duplicate claim (Redis SETNX)
     dup_result = check_duplicate_claim(claim)
     results.append(dup_result)
     if dup_result.hard_stop:
@@ -144,10 +162,13 @@ def run_gate1(claim: ClaimRequest) -> list[GateResult]:
 
 
 def clear_claim_store():
-    """Clear the in-memory duplicate store. Useful for testing."""
-    _claim_hashes.clear()
+    """Clear all FRS claim keys from Redis. Useful for testing."""
+    keys = _redis_client.keys(f"{REDIS_CLAIM_PREFIX}*")
+    if keys:
+        _redis_client.delete(*keys)
 
 
 def get_claim_store_size() -> int:
-    """Get the number of registered claim hashes."""
-    return len(_claim_hashes)
+    """Get the number of registered claim hashes in Redis."""
+    keys = _redis_client.keys(f"{REDIS_CLAIM_PREFIX}*")
+    return len(keys)

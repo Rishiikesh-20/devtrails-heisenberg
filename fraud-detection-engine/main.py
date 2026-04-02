@@ -27,6 +27,7 @@ from models.schemas import (
 )
 from gates.gate1_bouncer import run_gate1, clear_claim_store, get_claim_store_size
 from gates.gate2_velocity import run_gate2
+from gates.gate3_outlier import run_gate3
 from config import (
     AUTO_APPROVE_MAX, PARTIAL_HOLD_MAX, FRS_MAX_SCORE,
     DECISION_AUTO_APPROVE, DECISION_PARTIAL_HOLD, DECISION_FULL_WITHHOLD,
@@ -95,7 +96,7 @@ async def health_check():
         "status": "healthy",
         "service": "FRS Fraud Detection Engine",
         "version": "1.0.0",
-        "gates_active": ["Gate 1 — Bouncer", "Gate 2 — Speed Camera"],
+        "gates_active": ["Gate 1 — Bouncer", "Gate 2 — Speed Camera", "Gate 3 — Outlier Detector"],
         "registered_claims": get_claim_store_size(),
         "timestamp": datetime.now(timezone.utc).isoformat()
     }
@@ -173,6 +174,41 @@ async def test_gate2(claim: ClaimRequest):
     )
 
 
+# ─── Gate 3 Endpoint (Individual Test) ──────────────────────────────
+
+@app.post(
+    "/api/v1/fraud/gate/3",
+    response_model=FRSResult,
+    tags=["Individual Gates"],
+    summary="📊 Gate 3 — The Outlier Detector (Earnings & Activity AI)",
+    description=(
+        "Run **only Gate 3** on a claim.\n\n"
+        "**Checks performed:**\n"
+        "- **F2 — Earnings Inflation:** 14-day avg vs 4-week avg. If 3× higher → +60 FRS.\n"
+        "- **F3 — Activity Gaming:** Deliveries in 24hr before event vs rolling avg. "
+        "3× spike → +25, 1.5× spike → +12 FRS.\n\n"
+        "**Requires:** Earnings and activity fields in worker data.\n\n"
+        "**Test it:** Set `avg_earnings_14d: 1500` and `avg_earnings_4wk: 400` — "
+        "that's 3.75× inflation!"
+    )
+)
+async def test_gate3(claim: ClaimRequest):
+    """Test Gate 3 in isolation (skips Gates 1 & 2)."""
+    gate_results = run_gate3(claim)
+    total_frs = sum(r.frs_points for r in gate_results)
+    total_frs = min(total_frs, FRS_MAX_SCORE)
+    decision, description = get_frs_decision(total_frs)
+    return FRSResult(
+        worker_id=claim.worker.worker_id,
+        event_type=claim.event_type,
+        frs_score=total_frs,
+        decision=decision,
+        decision_description=description,
+        gate_results=gate_results,
+        timestamp=datetime.now(timezone.utc)
+    )
+
+
 # ─── Full FRS Pipeline ──────────────────────────────────────────────
 
 @app.post(
@@ -185,7 +221,7 @@ async def test_gate2(claim: ClaimRequest):
         "Currently active gates:\n"
         "- ✅ Gate 1 — The Bouncer (Rule-Based Filters)\n"
         "- ✅ Gate 2 — Speed Camera (GPS Velocity AI)\n"
-        "- 🔜 Gate 3 — Outlier Detector (coming next)\n"
+        "- ✅ Gate 3 — Outlier Detector (Earnings & Activity AI)\n"
         "- 🔜 Gate 4 — Network Mapper (coming next)\n\n"
         "**FRS = F1 + F2 + F3 + F5 + zone_anomaly_bonus**, capped at 100."
     )
@@ -216,7 +252,11 @@ async def full_frs_pipeline(claim: ClaimRequest):
     gate2_results = run_gate2(claim)
     all_gate_results.extend(gate2_results)
 
-    # ── Gate 3, 4 will be added here ──
+    # ── Gate 3: The Outlier Detector ──
+    gate3_results = run_gate3(claim)
+    all_gate_results.extend(gate3_results)
+
+    # ── Gate 4 will be added here ──
 
     # ── Zone Anomaly Bonus ──
     zone_bonus = 0
