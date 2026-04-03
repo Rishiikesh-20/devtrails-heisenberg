@@ -4,51 +4,49 @@
 ##############################################################################
 
 services:
-
   # ─────────────────────────────────────────────────────────────────────────
   #  Apache Kafka — KRaft mode (NO Zookeeper)
   # ─────────────────────────────────────────────────────────────────────────
   kafka:
-    image: bitnami/kafka:latest
+    image: apache/kafka:4.0.2
     container_name: devtrails-kafka
     ports:
-      - "9092:9092"        # External clients
-      - "9093:9093"        # Controller
+      - "9092:9092" # External clients
+      - "9093:9093" # Controller
     environment:
-      # ── KRaft configuration ──────────────────────────────────────────────
-      KAFKA_ENABLE_KRAFT: "yes"
-      KAFKA_CFG_PROCESS_ROLES: "broker,controller"
-      KAFKA_CFG_NODE_ID: "1"
-      KAFKA_CFG_CONTROLLER_QUORUM_VOTERS: "1@kafka:9093"
-      KAFKA_KRAFT_CLUSTER_ID: "MkU3OEVBNTcwNTJENDM2Qk"
+      CLUSTER_ID: "5L6g3nShT-eMCtK--X86sw"
+      KAFKA_NODE_ID: "1"
+      KAFKA_PROCESS_ROLES: "broker,controller"
+      KAFKA_CONTROLLER_QUORUM_VOTERS: "1@kafka:9093"
 
       # ── Listener configuration ───────────────────────────────────────────
-      KAFKA_CFG_LISTENERS: "PLAINTEXT://:9092,CONTROLLER://:9093"
-      KAFKA_CFG_ADVERTISED_LISTENERS: "PLAINTEXT://kafka:9092"
-      KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP: "PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT"
-      KAFKA_CFG_CONTROLLER_LISTENER_NAMES: "CONTROLLER"
-      KAFKA_CFG_INTER_BROKER_LISTENER_NAME: "PLAINTEXT"
+      KAFKA_LISTENERS: "PLAINTEXT://:9092,CONTROLLER://:9093"
+      KAFKA_ADVERTISED_LISTENERS: "PLAINTEXT://localhost:9092"
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: "CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT"
+      KAFKA_CONTROLLER_LISTENER_NAMES: "CONTROLLER"
+      KAFKA_INTER_BROKER_LISTENER_NAME: "PLAINTEXT"
 
       # ── Topic defaults ──────────────────────────────────────────────────
-      KAFKA_CFG_AUTO_CREATE_TOPICS_ENABLE: "true"
-      KAFKA_CFG_NUM_PARTITIONS: "3"
-      KAFKA_CFG_DEFAULT_REPLICATION_FACTOR: "1"
-      KAFKA_CFG_OFFSETS_TOPIC_REPLICATION_FACTOR: "1"
-      KAFKA_CFG_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: "1"
-      KAFKA_CFG_TRANSACTION_STATE_LOG_MIN_ISR: "1"
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+      KAFKA_NUM_PARTITIONS: "3"
+      KAFKA_DEFAULT_REPLICATION_FACTOR: "1"
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: "1"
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: "1"
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: "1"
 
       # ── Performance ─────────────────────────────────────────────────────
-      KAFKA_CFG_LOG_RETENTION_HOURS: "168"
-      KAFKA_CFG_LOG_SEGMENT_BYTES: "1073741824"
-
-      # ── Disable Zookeeper explicitly ─────────────────────────────────────
-      ALLOW_PLAINTEXT_LISTENER: "yes"
+      KAFKA_LOG_RETENTION_HOURS: "168"
+      KAFKA_LOG_SEGMENT_BYTES: "1073741824"
     volumes:
       - kafka_data:/bitnami/kafka
     networks:
       - devtrails-net
     healthcheck:
-      test: ["CMD-SHELL", "kafka-broker-api-versions.sh --bootstrap-server localhost:9092 || exit 1"]
+      test:
+        [
+          "CMD-SHELL",
+          "kafka-broker-api-versions.sh --bootstrap-server localhost:9092 || exit 1",
+        ]
       interval: 15s
       timeout: 10s
       retries: 10
@@ -109,8 +107,8 @@ services:
     image: clickhouse/clickhouse-server:latest
     container_name: devtrails-clickhouse
     ports:
-      - "8123:8123"        # HTTP interface
-      - "9000:9000"        # Native TCP protocol
+      - "8123:8123" # HTTP interface
+      - "9000:9000" # Native TCP protocol
     environment:
       CLICKHOUSE_DB: devtrails_telemetry
       CLICKHOUSE_USER: devtrails
