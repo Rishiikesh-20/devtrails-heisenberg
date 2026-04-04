@@ -1,8 +1,125 @@
 {
   "event_id": "2f2f67c3-6f9c-40a1-89d0-2fef2ea88f1e",
-  "event_type": "heavy_rain",
+  "event_type": "curfew",
   "zone_id": "south_delhi",
-  "severity_factor": 1,
+  "severity_factor": 1.2,
   "triggered_at": "2026-04-04T18:10:00Z",
-  "source": "open_meteo"
+  "source": "multi_source",
+  "ingestion": {
+    "weather": {
+      "provider": "open_meteo",
+      "precipitation_mm": 2.1,
+      "rain_mm": 1.7,
+      "wind_speed_kmh": 17.4,
+      "temperature_c": 30.2,
+      "threshold_mm": 15,
+      "sampled_at": "2026-04-04T18:09:43Z"
+    },
+    "news": {
+      "provider": "gdelt",
+      "query": "(curfew OR flood OR outage OR fuel shortage)",
+      "article_count": 14,
+      "keyword_hits": {
+        "curfew": 4,
+        "fuel": 0,
+        "outage": 1
+      },
+      "top_articles": [
+        {
+          "title": "Section 144 imposed across central districts",
+          "url": "https://example.com/news/section-144",
+          "source": "newswire",
+          "timestamp": "20260404173000"
+        }
+      ],
+      "sampled_at": "2026-04-04T18:09:44Z"
+    },
+    "social": {
+      "provider": "snscrape",
+      "query": "curfew OR flood OR outage OR lpg shortage",
+      "post_count": 36,
+      "keyword_hits": {
+        "curfew": 5,
+        "fuel": 1,
+        "outage": 1
+      },
+      "top_posts": [
+        {
+          "source": "twitter",
+          "content": "Traffic blocked after new curfew order.",
+          "url": "https://x.com/sample/status/123",
+          "timestamp": "2026-04-04T18:08:10Z"
+        }
+      ],
+      "sampled_at": "2026-04-04T18:09:46Z"
+    }
+  },
+  "geo": {
+    "provider": "openstreetmap_nominatim",
+    "latitude": 28.6139,
+    "longitude": 77.209,
+    "display_name": "New Delhi, Delhi, India",
+    "city": "New Delhi",
+    "state": "Delhi",
+    "country": "India",
+    "sampled_at": "2026-04-04T18:09:47Z"
+  },
+  "routing": {
+    "osrm": {
+      "provider": "osrm",
+      "distance_m": 6840.2,
+      "duration_s": 1640,
+      "estimated_free_flow_s": 820,
+      "congestion_ratio": 2,
+      "threshold_ratio": 1.6,
+      "threshold_crossed": true,
+      "sampled_at": "2026-04-04T18:09:47Z"
+    },
+    "openrouteservice": {
+      "provider": "openrouteservice",
+      "enabled": true,
+      "distance_m": 7021.1,
+      "duration_s": 1704.2,
+      "estimated_free_flow_s": 842.5,
+      "congestion_ratio": 2.02,
+      "threshold_ratio": 1.6,
+      "threshold_crossed": true,
+      "sampled_at": "2026-04-04T18:09:47Z"
+    },
+    "destination": {
+      "latitude": 28.6539,
+      "longitude": 77.249
+    }
+  },
+  "places": {
+    "provider": "nominatim",
+    "query": "fuel station",
+    "match_count": 2,
+    "matches": [
+      {
+        "display_name": "IndianOil Fuel Station, Connaught Place",
+        "lat": "28.6311",
+        "lon": "77.2165",
+        "class": "amenity",
+        "type": "fuel"
+      }
+    ],
+    "sampled_at": "2026-04-04T18:09:48Z"
+  },
+  "evidence": [
+    {
+      "type": "news",
+      "source": "newswire",
+      "title": "Section 144 imposed across central districts",
+      "url": "https://example.com/news/section-144",
+      "timestamp": "20260404173000"
+    },
+    {
+      "type": "social",
+      "source": "twitter",
+      "title": "Traffic blocked after new curfew order.",
+      "url": "https://x.com/sample/status/123",
+      "timestamp": "2026-04-04T18:08:10Z"
+    }
+  ]
 }

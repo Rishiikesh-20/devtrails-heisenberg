@@ -45,10 +45,394 @@
       "type": "string",
       "enum": [
         "open_meteo",
+        "gdelt",
+        "snscrape",
+        "osrm",
+        "openrouteservice",
+        "nominatim",
+        "openstreetmap_nominatim",
+        "multi_source",
         "tomtom",
         "news_oracle",
         "platform_monitor",
         "manual_override"
+      ]
+    },
+    "ingestion": {
+      "$ref": "#/$defs/ingestion"
+    },
+    "geo": {
+      "$ref": "#/$defs/geo"
+    },
+    "routing": {
+      "$ref": "#/$defs/routing"
+    },
+    "places": {
+      "$ref": "#/$defs/places"
+    },
+    "evidence": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/evidence_item"
+      },
+      "maxItems": 20
+    }
+  },
+  "$defs": {
+    "keyword_hits": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "curfew": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "fuel": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "outage": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "curfew",
+        "fuel",
+        "outage"
+      ]
+    },
+    "news_article": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "title": {
+          "type": "string"
+        },
+        "url": {
+          "type": "string"
+        },
+        "source": {
+          "type": "string"
+        },
+        "timestamp": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "title",
+        "url",
+        "source",
+        "timestamp"
+      ]
+    },
+    "social_post": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "source": {
+          "type": "string"
+        },
+        "url": {
+          "type": "string"
+        },
+        "content": {
+          "type": "string"
+        },
+        "timestamp": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "source"
+      ]
+    },
+    "weather_ingestion": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "provider": {
+          "type": "string"
+        },
+        "precipitation_mm": {
+          "type": "number"
+        },
+        "rain_mm": {
+          "type": "number"
+        },
+        "wind_speed_kmh": {
+          "type": "number"
+        },
+        "temperature_c": {
+          "type": "number"
+        },
+        "threshold_mm": {
+          "type": "number"
+        },
+        "sampled_at": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "provider"
+      ]
+    },
+    "news_ingestion": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "provider": {
+          "type": "string"
+        },
+        "query": {
+          "type": "string"
+        },
+        "article_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "keyword_hits": {
+          "$ref": "#/$defs/keyword_hits"
+        },
+        "top_articles": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/news_article"
+          }
+        },
+        "sampled_at": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "provider"
+      ]
+    },
+    "social_ingestion": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "provider": {
+          "type": "string"
+        },
+        "query": {
+          "type": "string"
+        },
+        "post_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "keyword_hits": {
+          "$ref": "#/$defs/keyword_hits"
+        },
+        "top_posts": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/social_post"
+          }
+        },
+        "sampled_at": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "provider"
+      ]
+    },
+    "ingestion": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "weather": {
+          "$ref": "#/$defs/weather_ingestion"
+        },
+        "news": {
+          "$ref": "#/$defs/news_ingestion"
+        },
+        "social": {
+          "$ref": "#/$defs/social_ingestion"
+        }
+      },
+      "required": [
+        "weather",
+        "news",
+        "social"
+      ]
+    },
+    "geo": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "provider": {
+          "type": "string"
+        },
+        "latitude": {
+          "type": "number"
+        },
+        "longitude": {
+          "type": "number"
+        },
+        "display_name": {
+          "type": "string"
+        },
+        "city": {
+          "type": "string"
+        },
+        "state": {
+          "type": "string"
+        },
+        "country": {
+          "type": "string"
+        },
+        "sampled_at": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "provider",
+        "latitude",
+        "longitude"
+      ]
+    },
+    "route_provider": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "provider": {
+          "type": "string"
+        },
+        "threshold_crossed": {
+          "type": "boolean"
+        },
+        "congestion_ratio": {
+          "type": "number"
+        },
+        "sampled_at": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "provider"
+      ]
+    },
+    "routing": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "osrm": {
+          "$ref": "#/$defs/route_provider"
+        },
+        "openrouteservice": {
+          "$ref": "#/$defs/route_provider"
+        },
+        "destination": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "latitude": {
+              "type": "number"
+            },
+            "longitude": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "latitude",
+            "longitude"
+          ]
+        }
+      },
+      "required": [
+        "osrm",
+        "openrouteservice",
+        "destination"
+      ]
+    },
+    "place_match": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "display_name": {
+          "type": "string"
+        },
+        "lat": {
+          "type": "string"
+        },
+        "lon": {
+          "type": "string"
+        },
+        "class": {
+          "type": "string"
+        },
+        "type": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "display_name"
+      ]
+    },
+    "places": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "provider": {
+          "type": "string"
+        },
+        "query": {
+          "type": "string"
+        },
+        "match_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "matches": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/place_match"
+          }
+        },
+        "sampled_at": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "provider",
+        "query",
+        "match_count",
+        "matches"
+      ]
+    },
+    "evidence_item": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": [
+            "news",
+            "social"
+          ]
+        },
+        "source": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "url": {
+          "type": "string"
+        },
+        "timestamp": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "source",
+        "title",
+        "url",
+        "timestamp"
       ]
     }
   }

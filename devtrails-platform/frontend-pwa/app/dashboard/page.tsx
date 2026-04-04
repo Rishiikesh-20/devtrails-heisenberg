@@ -19,10 +19,16 @@ import {
   ArrowUpRight,
 } from "lucide-react";
 import { PageShell } from "../components/ui/PageShell";
-import { useToast } from "../components/ui/ToastProvider";
-import { getUser, getOnboarding, apiGet } from "../lib/api";
+import { ActivePolicySnapshotCard } from "../components/dashboard/ActivePolicySnapshotCard";
+import { NextPayoutEtaCard } from "../components/dashboard/NextPayoutEtaCard";
+import { CurrentCoverageStatusCard } from "../components/dashboard/CurrentCoverageStatusCard";
+import { LiveDisruptionAlertsPanel } from "../components/dashboard/LiveDisruptionAlertsPanel";
+import { ZoneRiskIndicator } from "../components/dashboard/ZoneRiskIndicator";
+import { OracleInsightsDrawer } from "../components/dashboard/OracleInsightsDrawer";
+import { getUser, apiGet } from "../lib/api";
 import { TIER_INFO } from "../lib/constants";
 import type {
+  RegisterResponse,
   WalletResponse,
   PayoutListResponse,
   PayoutListItem,
@@ -40,9 +46,7 @@ const COVERAGE_ITEMS = [
 
 export default function DashboardPage() {
   const router = useRouter();
-  const { addToast } = useToast();
-  const [user, setUser] = useState<any>(null);
-  const [onboarding, setOnboarding] = useState<any>(null);
+  const [user, setUser] = useState<RegisterResponse | null>(null);
   const [mounted, setMounted] = useState(false);
 
   const [walletBalance, setWalletBalance] = useState(0);
@@ -51,10 +55,12 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  const [selectedAlert, setSelectedAlert] = useState<{id: string; type: string; location: string; severity: 'Critical' | 'High' | 'Elevated'; time: string; linkedClaim?: string;} | null>(null);
+  const [drawerOpen, setDrawerOpen] = useState(false);
+
   useEffect(() => {
     const loadedUser = getUser();
     setUser(loadedUser);
-    setOnboarding(getOnboarding());
     setMounted(true);
 
     const userId = loadedUser?.id;
@@ -105,6 +111,18 @@ export default function DashboardPage() {
   const tierInfo = TIER_INFO[user.tier] ?? TIER_INFO[3];
   const premium = user.pricing_breakdown?.final_premium ?? user.weekly_premium ?? 0;
   const approvedClaims = claims.filter((c) => c.status === "approved").length;
+  const maxCoverage = parseMaxPayoutAmount(tierInfo.maxPayout);
+  const coverageUsedThisCycle = payouts
+    .filter((item) => isSettledPayout(item.status))
+    .filter((item) => new Date(item.created_at).getTime() >= getCurrentCycleStart().getTime())
+    .reduce((sum, item) => sum + item.amount, 0);
+  const coverageLeft = Math.max(maxCoverage - coverageUsedThisCycle, 0);
+  const policyStatus: "active" | "waiting" | "expired" = !user?.tier
+    ? "expired"
+    : loading
+      ? "waiting"
+      : "active";
+  const nextRenewalAt = getNextWeeklyRenewalIso(new Date());
 
   return (
     <PageShell>
@@ -167,7 +185,15 @@ export default function DashboardPage() {
               </div>
             </div>
 
-            {/* Stats row */}
+            {/* Stats row & Disruption Row */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+               <ZoneRiskIndicator />
+               <LiveDisruptionAlertsPanel onAlertClick={(alert) => {
+                 setSelectedAlert(alert);
+                 setDrawerOpen(true);
+               }} />
+            </div>
+
             <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
               <StatCard
                 label="Weekly Premium"
@@ -194,7 +220,7 @@ export default function DashboardPage() {
               <button
                 type="button"
                 onClick={() => router.push("/reports")}
-                className="glass-card rounded-xl p-5 flex items-center gap-4 hover:bg-white/[0.06] transition-colors group"
+                className="glass-card rounded-xl p-5 flex items-center gap-4 hover:bg-white/6 transition-colors group"
               >
                 <div className="w-10 h-10 rounded-xl bg-amber-500/10 flex items-center justify-center shrink-0">
                   <FileText size={18} className="text-amber-400" />
@@ -208,7 +234,7 @@ export default function DashboardPage() {
               <button
                 type="button"
                 onClick={() => router.push("/weather")}
-                className="glass-card rounded-xl p-5 flex items-center gap-4 hover:bg-white/[0.06] transition-colors group"
+                className="glass-card rounded-xl p-5 flex items-center gap-4 hover:bg-white/6 transition-colors group"
               >
                 <div className="w-10 h-10 rounded-xl bg-blue-500/10 flex items-center justify-center shrink-0">
                   <CloudSun size={18} className="text-blue-400" />
@@ -223,13 +249,13 @@ export default function DashboardPage() {
 
             {/* Payout History */}
             <div className="glass-card rounded-2xl overflow-hidden">
-              <div className="px-5 py-4 border-b border-white/[0.06] flex items-center justify-between">
+              <div className="px-5 py-4 border-b border-white/6 flex items-center justify-between">
                 <h3 className="text-sm font-semibold uppercase tracking-wider text-white/60">
                   Auto Payout Ledger
                 </h3>
                 <TrendingUp size={14} className="text-white/20" />
               </div>
-              <div className="divide-y divide-white/[0.04]">
+              <div className="divide-y divide-white/4">
                 {loading ? (
                   <div className="px-5 py-8">
                     <div className="skeleton h-12 w-full mb-3" />
@@ -252,14 +278,30 @@ export default function DashboardPage() {
 
           {/* Right Column */}
           <div className="space-y-6">
+            <ActivePolicySnapshotCard
+              status={policyStatus}
+              coverageLeft={coverageLeft}
+              maxCoverage={maxCoverage}
+              weeklyPremium={Number(premium) || 0}
+              nextRenewalAt={nextRenewalAt}
+            />
+
+            <NextPayoutEtaCard payouts={payouts} claims={claims} loading={loading} />
+
+            <CurrentCoverageStatusCard
+              status={policyStatus}
+              coverageLeft={coverageLeft}
+              maxCoverage={maxCoverage}
+            />
+
             {/* Coverage */}
             <div className="glass-card rounded-2xl overflow-hidden">
-              <div className="px-5 py-4 border-b border-white/[0.06]">
+              <div className="px-5 py-4 border-b border-white/6">
                 <h3 className="text-sm font-semibold uppercase tracking-wider text-white/60">
                   Covered Disruptions
                 </h3>
               </div>
-              <div className="divide-y divide-white/[0.04]">
+              <div className="divide-y divide-white/4">
                 {COVERAGE_ITEMS.map((item) => {
                   const Icon = item.icon;
                   return (
@@ -295,12 +337,12 @@ export default function DashboardPage() {
 
             {/* Recent claims */}
             <div className="glass-card rounded-2xl overflow-hidden">
-              <div className="px-5 py-4 border-b border-white/[0.06]">
+              <div className="px-5 py-4 border-b border-white/6">
                 <h3 className="text-sm font-semibold uppercase tracking-wider text-white/60">
                   Recent Claims
                 </h3>
               </div>
-              <div className="divide-y divide-white/[0.04]">
+              <div className="divide-y divide-white/4">
                 {loading ? (
                   <div className="px-5 py-6">
                     <div className="skeleton h-8 w-full mb-2" />
@@ -337,8 +379,51 @@ export default function DashboardPage() {
           </div>
         </section>
       </div>
+
+      {/* Trigger -> Claim Drawer */}
+      <OracleInsightsDrawer
+        isOpen={drawerOpen}
+        alert={selectedAlert}
+        onClose={() => setDrawerOpen(false)}
+      />
     </PageShell>
   );
+}
+
+function parseMaxPayoutAmount(maxPayoutLabel: string): number {
+  const digits = maxPayoutLabel.replace(/[^0-9]/g, "");
+  return digits ? Number(digits) : 0;
+}
+
+function isSettledPayout(status: string): boolean {
+  const normalized = status.trim().toLowerCase();
+  return normalized === "credited" || normalized === "succeeded";
+}
+
+function getCurrentCycleStart(reference = new Date()): Date {
+  const start = new Date(reference);
+  const mondayOffset = (start.getDay() + 6) % 7;
+  start.setDate(start.getDate() - mondayOffset);
+  start.setHours(0, 0, 0, 0);
+  return start;
+}
+
+function getNextWeeklyRenewalIso(reference: Date): string {
+  const next = new Date(reference);
+  next.setHours(7, 0, 0, 0);
+
+  const day = next.getDay();
+  let daysUntilMonday = (8 - day) % 7;
+  if (daysUntilMonday === 0) {
+    daysUntilMonday = 7;
+  }
+
+  if (day === 1 && reference.getHours() < 7) {
+    daysUntilMonday = 0;
+  }
+
+  next.setDate(next.getDate() + daysUntilMonday);
+  return next.toISOString();
 }
 
 function StatCard({

@@ -109,13 +109,137 @@ type tierResponse struct {
 	WeeklyPremium float64 `json:"weekly_premium"`
 }
 
+type disruptionKeywordHits struct {
+	Curfew int `json:"curfew"`
+	Fuel   int `json:"fuel"`
+	Outage int `json:"outage"`
+}
+
+type disruptionNewsArticle struct {
+	Title     string `json:"title"`
+	URL       string `json:"url"`
+	Source    string `json:"source"`
+	Timestamp string `json:"timestamp"`
+}
+
+type disruptionSocialPost struct {
+	Source    string `json:"source"`
+	Content   string `json:"content"`
+	URL       string `json:"url"`
+	Timestamp string `json:"timestamp"`
+}
+
+type disruptionWeatherIngestion struct {
+	Provider        string  `json:"provider"`
+	PrecipitationMM float64 `json:"precipitation_mm"`
+	RainMM          float64 `json:"rain_mm"`
+	WindSpeedKMH    float64 `json:"wind_speed_kmh"`
+	TemperatureC    float64 `json:"temperature_c"`
+	ThresholdMM     float64 `json:"threshold_mm"`
+	SampledAt       string  `json:"sampled_at"`
+	Error           string  `json:"error,omitempty"`
+}
+
+type disruptionNewsIngestion struct {
+	Provider     string                  `json:"provider"`
+	Query        string                  `json:"query"`
+	ArticleCount int                     `json:"article_count"`
+	KeywordHits  disruptionKeywordHits   `json:"keyword_hits"`
+	TopArticles  []disruptionNewsArticle `json:"top_articles"`
+	SampledAt    string                  `json:"sampled_at"`
+	Error        string                  `json:"error,omitempty"`
+}
+
+type disruptionSocialIngestion struct {
+	Provider    string                 `json:"provider"`
+	Query       string                 `json:"query"`
+	PostCount   int                    `json:"post_count"`
+	KeywordHits disruptionKeywordHits  `json:"keyword_hits"`
+	TopPosts    []disruptionSocialPost `json:"top_posts"`
+	SampledAt   string                 `json:"sampled_at"`
+	Error       string                 `json:"error,omitempty"`
+}
+
+type disruptionIngestion struct {
+	Weather disruptionWeatherIngestion `json:"weather"`
+	News    disruptionNewsIngestion    `json:"news"`
+	Social  disruptionSocialIngestion  `json:"social"`
+}
+
+type disruptionGeoContext struct {
+	Provider    string  `json:"provider"`
+	Latitude    float64 `json:"latitude"`
+	Longitude   float64 `json:"longitude"`
+	DisplayName string  `json:"display_name"`
+	City        string  `json:"city"`
+	State       string  `json:"state"`
+	Country     string  `json:"country"`
+	SampledAt   string  `json:"sampled_at"`
+	Error       string  `json:"error,omitempty"`
+}
+
+type disruptionRouteSignal struct {
+	Provider         string  `json:"provider"`
+	DistanceM        float64 `json:"distance_m"`
+	DurationS        float64 `json:"duration_s"`
+	FreeFlowS        float64 `json:"estimated_free_flow_s"`
+	CongestionRatio  float64 `json:"congestion_ratio"`
+	ThresholdRatio   float64 `json:"threshold_ratio"`
+	ThresholdCrossed bool    `json:"threshold_crossed"`
+	Enabled          bool    `json:"enabled"`
+	Reason           string  `json:"reason,omitempty"`
+	SampledAt        string  `json:"sampled_at"`
+	Error            string  `json:"error,omitempty"`
+}
+
+type disruptionRoutingDestination struct {
+	Latitude  float64 `json:"latitude"`
+	Longitude float64 `json:"longitude"`
+}
+
+type disruptionRouting struct {
+	OSRM             disruptionRouteSignal        `json:"osrm"`
+	OpenRouteService disruptionRouteSignal        `json:"openrouteservice"`
+	Destination      disruptionRoutingDestination `json:"destination"`
+}
+
+type disruptionPlaceMatch struct {
+	DisplayName string `json:"display_name"`
+	Lat         string `json:"lat"`
+	Lon         string `json:"lon"`
+	Class       string `json:"class"`
+	Type        string `json:"type"`
+}
+
+type disruptionPlaces struct {
+	Provider   string                 `json:"provider"`
+	Query      string                 `json:"query"`
+	MatchCount int                    `json:"match_count"`
+	Matches    []disruptionPlaceMatch `json:"matches"`
+	SampledAt  string                 `json:"sampled_at"`
+	Error      string                 `json:"error,omitempty"`
+}
+
+type disruptionEvidence struct {
+	Type      string `json:"type"`
+	Source    string `json:"source"`
+	Title     string `json:"title"`
+	URL       string `json:"url"`
+	Timestamp string `json:"timestamp"`
+}
+
 type disruptionEvent struct {
-	EventID        string  `json:"event_id"`
-	EventType      string  `json:"event_type"`
-	ZoneID         string  `json:"zone_id"`
-	SeverityFactor float64 `json:"severity_factor"`
-	TriggeredAt    string  `json:"triggered_at"`
-	Source         string  `json:"source"`
+	EventID        string                `json:"event_id"`
+	EventType      string                `json:"event_type"`
+	ZoneID         string                `json:"zone_id"`
+	SeverityFactor float64               `json:"severity_factor"`
+	TriggeredAt    string                `json:"triggered_at"`
+	Source         string                `json:"source"`
+	Ingestion      *disruptionIngestion  `json:"ingestion,omitempty"`
+	Geo            *disruptionGeoContext `json:"geo,omitempty"`
+	Routing        *disruptionRouting    `json:"routing,omitempty"`
+	Places         *disruptionPlaces     `json:"places,omitempty"`
+	Evidence       []disruptionEvidence  `json:"evidence,omitempty"`
 }
 
 type frsRequest struct {

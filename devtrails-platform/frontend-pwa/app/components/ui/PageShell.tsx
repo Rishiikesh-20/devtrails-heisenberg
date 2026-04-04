@@ -7,6 +7,7 @@ import {
   LayoutDashboard,
   FileText,
   CloudSun,
+  BadgeCheck,
   User,
   Shield,
   LogOut,
@@ -17,6 +18,7 @@ import { getUser, getOnboarding, clearSession } from "../../lib/api";
 
 const NAV_ITEMS = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
+  { href: "/policy", label: "Policy", icon: BadgeCheck },
   { href: "/reports", label: "Reports", icon: FileText },
   { href: "/weather", label: "Signals", icon: CloudSun },
   { href: "/profile", label: "Profile", icon: User },
@@ -40,7 +42,7 @@ export function PageShell({ children }: { children: ReactNode }) {
   return (
     <div className="min-h-screen bg-[#08172c] text-white flex flex-col">
       {/* ── Top Header ─────────────────────────────────── */}
-      <header className="sticky top-0 z-40 bg-[#08172c]/95 backdrop-blur-xl border-b border-white/[0.06]">
+      <header className="sticky top-0 z-40 bg-[#08172c]/95 backdrop-blur-xl border-b border-white/6">
         <div className="max-w-7xl mx-auto px-5 flex items-center justify-between h-16">
           {/* Logo */}
           <Link href="/dashboard" className="flex items-center gap-2.5 group">
@@ -63,8 +65,8 @@ export function PageShell({ children }: { children: ReactNode }) {
                   href={item.href}
                   className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
                     isActive
-                      ? "bg-white/[0.08] text-white"
-                      : "text-white/50 hover:text-white hover:bg-white/[0.04]"
+                      ? "bg-white/8 text-white"
+                      : "text-white/50 hover:text-white hover:bg-white/4"
                   }`}
                 >
                   <Icon size={16} strokeWidth={1.8} />
@@ -86,7 +88,7 @@ export function PageShell({ children }: { children: ReactNode }) {
             <button
               type="button"
               onClick={handleLogout}
-              className="hidden md:flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-white/40 hover:text-white hover:bg-white/[0.06] transition-colors"
+              className="hidden md:flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-white/40 hover:text-white hover:bg-white/6 transition-colors"
             >
               <LogOut size={14} strokeWidth={1.8} />
               Logout
@@ -96,7 +98,7 @@ export function PageShell({ children }: { children: ReactNode }) {
             <button
               type="button"
               onClick={() => setMobileOpen(!mobileOpen)}
-              className="md:hidden w-9 h-9 flex items-center justify-center rounded-lg bg-white/[0.06]"
+              className="md:hidden w-9 h-9 flex items-center justify-center rounded-lg bg-white/6"
               aria-label="Toggle menu"
             >
               {mobileOpen ? <X size={18} /> : <Menu size={18} />}
@@ -106,7 +108,7 @@ export function PageShell({ children }: { children: ReactNode }) {
 
         {/* Mobile nav */}
         {mobileOpen && (
-          <div className="md:hidden border-t border-white/[0.06] bg-[#0a1d33]/98 backdrop-blur-xl animate-fade-in">
+          <div className="md:hidden border-t border-white/6 bg-[#0a1d33]/98 backdrop-blur-xl animate-fade-in">
             <div className="px-5 py-4 space-y-1">
               {NAV_ITEMS.map((item) => {
                 const Icon = item.icon;
@@ -119,7 +121,7 @@ export function PageShell({ children }: { children: ReactNode }) {
                     className={`flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-colors ${
                       isActive
                         ? "bg-electric/10 text-electric"
-                        : "text-white/60 hover:text-white hover:bg-white/[0.04]"
+                        : "text-white/60 hover:text-white hover:bg-white/4"
                     }`}
                   >
                     <Icon size={18} strokeWidth={1.8} />
@@ -144,8 +146,8 @@ export function PageShell({ children }: { children: ReactNode }) {
       <main className="flex-1">{children}</main>
 
       {/* ── Mobile bottom nav ──────────────────────────── */}
-      <nav className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-[#08172c]/95 backdrop-blur-xl border-t border-white/[0.06]">
-        <div className="grid grid-cols-4 h-16">
+      <nav className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-[#08172c]/95 backdrop-blur-xl border-t border-white/6">
+        <div className="grid grid-cols-5 h-16">
           {NAV_ITEMS.map((item) => {
             const Icon = item.icon;
             const isActive = pathname === item.href;
