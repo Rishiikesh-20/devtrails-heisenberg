@@ -17,6 +17,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/devtrails/backend-go/internal/reports"
 	"github.com/devtrails/backend-go/internal/signals"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -173,7 +174,7 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("postgres connect: %w", err)
 	}
-	if err := db.AutoMigrate(&User{}, &signals.WeatherSignal{}); err != nil {
+	if err := db.AutoMigrate(&User{}, &signals.WeatherSignal{}, &reports.UserReport{}); err != nil {
 		return fmt.Errorf("automigrate: %w", err)
 	}
 
@@ -205,9 +206,11 @@ func run() error {
 	router.GET("/health", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"status": "ok", "service": "backend-go-core-api"})
 	})
-	router.POST("/api/register", app.registerUser)
-	router.GET("/api/admin/metrics", app.getAdminMetrics)
-	router.GET("/api/signals", app.listSignals)
+	router.POST("/api/v1/register", app.registerUser)
+	router.POST("/api/v1/reports", app.submitReport)
+	router.GET("/api/v1/reports", app.listReports)
+	router.GET("/api/v1/admin/metrics", app.getAdminMetrics)
+	router.GET("/api/v1/weather", app.listWeather)
 	// i aded a new line to checklets see
 	srv := &http.Server{
 		Addr:              ":" + cfg.Port,
@@ -709,7 +712,7 @@ func (a *App) pollAndStoreWeather(ctx context.Context) {
 	}
 }
 
-func (a *App) listSignals(c *gin.Context) {
+func (a *App) listWeather(c *gin.Context) {
 	limitStr := c.Query("limit")
 	limit, _ := strconv.Atoi(limitStr)
 	if limit == 0 {
@@ -734,6 +737,84 @@ func (a *App) listSignals(c *gin.Context) {
 	res, err := signals.QuerySignals(a.db.WithContext(c.Request.Context()), filters)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to query signals", "details": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"data":  res,
+		"count": len(res),
+	})
+}
+
+type submitReportRequest struct {
+	UserID   string `json:"user_id" binding:"required"`
+	Zone     string `json:"zone" binding:"required"`
+	Category string `json:"category" binding:"required"`
+	Severity int    `json:"severity" binding:"required"`
+	Details  string `json:"details"`
+}
+
+func (a *App) submitReport(c *gin.Context) {
+	var req submitReportRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	report := &reports.UserReport{
+		ID:         uuid.NewString(),
+		UserID:     req.UserID,
+		Zone:       req.Zone,
+		Category:   req.Category,
+		Severity:   req.Severity,
+		Details:    req.Details,
+		ReportedAt: time.Now().UTC(),
+		CreatedAt:  time.Now().UTC(),
+	}
+
+	// Calculate Authenticity based on consensus
+	if err := reports.EvaluateReport(c.Request.Context(), a.db.WithContext(c.Request.Context()), report); err != nil {
+		log.Printf("Failed to evaluate report authenticity: %v", err)
+		// non-fatal, proceed with default values
+	}
+
+	if err := reports.SaveReport(a.db.WithContext(c.Request.Context()), report); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to save report", "details": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusCreated, gin.H{
+		"message":            "report submitted successfully",
+		"id":                 report.ID,
+		"status":             report.Status,
+		"authenticity_score": report.AuthenticityScore,
+	})
+}
+
+func (a *App) listReports(c *gin.Context) {
+	limitStr := c.Query("limit")
+	limit, _ := strconv.Atoi(limitStr)
+	if limit == 0 {
+		limit = 50
+	}
+
+	filters := reports.ReportQueryFilters{
+		Limit: limit,
+	}
+
+	if zone := c.Query("zone"); zone != "" {
+		filters.Zone = &zone
+	}
+	if cat := c.Query("category"); cat != "" {
+		filters.Category = &cat
+	}
+	if status := c.Query("status"); status != "" {
+		filters.Status = &status
+	}
+
+	res, err := reports.QueryReports(a.db.WithContext(c.Request.Context()), filters)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to query reports", "details": err.Error()})
 		return
 	}
 
