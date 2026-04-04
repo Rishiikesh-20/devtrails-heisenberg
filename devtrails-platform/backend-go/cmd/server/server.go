@@ -3,11 +3,9 @@ package main
 import (
 	"bytes"
 	"context"
-	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"log"
 	"net/http"
 	"os"
@@ -41,6 +39,10 @@ type ServerConfig struct {
 	PollingLongitude     float64
 	PollingZone          string
 	PollIntervalMin      int
+	FraudEngineURL       string
+	StripeSecretKey      string
+	StripeCurrency       string
+	StripePaymentMethod  string
 }
 
 type App struct {
@@ -48,6 +50,7 @@ type App struct {
 	db         *gorm.DB
 	redis      *redis.Client
 	httpClient *http.Client
+	validator  *ContractValidator
 }
 
 type User struct {
@@ -61,16 +64,23 @@ type User struct {
 	Active        bool      `gorm:"index;default:true" json:"active"`
 	RiskTier      int       `gorm:"not null;default:3" json:"risk_tier"`
 	WeeklyPremium float64   `gorm:"type:numeric(10,2);not null;default:0" json:"weekly_premium"`
+	WagePerHour   float64   `gorm:"type:numeric(10,2);not null;default:150" json:"wage_per_hour"`
 	CreatedAt     time.Time `json:"created_at"`
 	UpdatedAt     time.Time `json:"updated_at"`
 }
 
 type RegisterRequest struct {
-	Email      string `json:"email" binding:"required,email"`
-	FullName   string `json:"full_name" binding:"required"`
-	Zone       string `json:"zone" binding:"required"`
-	ShiftStart string `json:"shift_start" binding:"required"`
-	ShiftEnd   string `json:"shift_end" binding:"required"`
+	Email       string   `json:"email" binding:"required,email"`
+	FullName    string   `json:"full_name" binding:"required"`
+	Zone        string   `json:"zone" binding:"required"`
+	ShiftStart  string   `json:"shift_start" binding:"required"`
+	ShiftEnd    string   `json:"shift_end" binding:"required"`
+	WagePerHour *float64 `json:"wage_per_hour,omitempty"`
+}
+
+type LoginRequest struct {
+	Email    string `json:"email" binding:"required,email"`
+	Password string `json:"password" binding:"required"`
 }
 
 type tierRequest struct {
@@ -87,9 +97,10 @@ type tierResponse struct {
 type disruptionEvent struct {
 	EventID        string  `json:"event_id"`
 	EventType      string  `json:"event_type"`
-	Zone           string  `json:"zone"`
+	ZoneID         string  `json:"zone_id"`
 	SeverityFactor float64 `json:"severity_factor"`
-	Timestamp      int64   `json:"timestamp"`
+	TriggeredAt    string  `json:"triggered_at"`
+	Source         string  `json:"source"`
 }
 
 type frsRequest struct {
@@ -107,24 +118,6 @@ type frsRequest struct {
 type frsResponse struct {
 	FRSScore int    `json:"frs_score"`
 	Status   string `json:"status"`
-}
-
-type verifyClaimItem struct {
-	UserID             string  `json:"user_id"`
-	EventType          string  `json:"event_type"`
-	EventTimestamp     int64   `json:"event_timestamp"`
-	Zone               string  `json:"zone"`
-	ClaimedAmount      float64 `json:"claimed_amount"`
-	AvgWeeklyEarnings  float64 `json:"avg_weekly_earnings"`
-	RecentClaims       int     `json:"recent_claims"`
-	SharedDeviceCount  int     `json:"shared_device_count"`
-	LinkedAccountCount int     `json:"linked_account_count"`
-}
-
-type ClaimDecision struct {
-	UserID   string `json:"user_id"`
-	FRSScore int    `json:"frs_score"`
-	Decision string `json:"decision"`
 }
 
 type AdminMetrics struct {
@@ -168,6 +161,10 @@ func run() error {
 		PollingLongitude:     pollingLon,
 		PollingZone:          env("POLLING_ZONE", "south_delhi_h3_index"),
 		PollIntervalMin:      pollIntMin,
+		FraudEngineURL:       env("FRAUD_ENGINE_URL", "http://localhost:8001"),
+		StripeSecretKey:      env("STRIPE_SECRET_KEY", ""),
+		StripeCurrency:       env("STRIPE_CURRENCY", "inr"),
+		StripePaymentMethod:  env("STRIPE_PAYMENT_METHOD", "pm_card_visa"),
 	}
 
 	db, err := gorm.Open(postgres.Open(cfg.DatabaseURL), &gorm.Config{})
@@ -192,6 +189,17 @@ func run() error {
 		},
 	}
 
+	contractValidationEnabled := strings.EqualFold(strings.TrimSpace(env("CONTRACT_VALIDATION_ENABLED", "true")), "true")
+	if contractValidationEnabled {
+		contractsDir := env("CONTRACTS_DIR", "../../contracts")
+		validator, err := NewContractValidator(contractsDir)
+		if err != nil {
+			return fmt.Errorf("contract validator setup failed: %w", err)
+		}
+		app.validator = validator
+		log.Printf("contract validation enabled contracts_dir=%s", contractsDir)
+	}
+
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -200,6 +208,7 @@ func run() error {
 
 	router := gin.Default()
 	router.Use(corsMiddleware())
+	router.Use(ResponseSchemaValidationMiddleware(app.validator))
 	router.OPTIONS("/*path", func(c *gin.Context) {
 		c.Status(http.StatusNoContent)
 	})
@@ -207,10 +216,21 @@ func run() error {
 		c.JSON(http.StatusOK, gin.H{"status": "ok", "service": "backend-go-core-api"})
 	})
 	router.POST("/api/v1/register", app.registerUser)
+	router.POST("/api/v1/login", app.loginUser)
 	router.POST("/api/v1/reports", app.submitReport)
 	router.GET("/api/v1/reports", app.listReports)
 	router.GET("/api/v1/admin/metrics", app.getAdminMetrics)
 	router.GET("/api/v1/weather", app.listWeather)
+	router.POST("/api/register", app.registerUser)
+	router.POST("/api/login", app.loginUser)
+	router.GET("/api/admin/metrics", app.getAdminMetrics)
+	router.GET("/api/signals", app.listWeather)
+	router.GET("/wallet", app.getWallet)
+	router.GET("/payouts", app.listPayouts)
+	router.GET("/claims", app.listClaims)
+	router.GET("/api/wallet", app.getWallet)
+	router.GET("/api/payouts", app.listPayouts)
+	router.GET("/api/claims", app.listClaims)
 	srv := &http.Server{
 		Addr:              ":" + cfg.Port,
 		Handler:           router,
@@ -251,6 +271,15 @@ func (a *App) registerUser(c *gin.Context) {
 		return
 	}
 
+	wagePerHour := defaultWagePerHour
+	if req.WagePerHour != nil {
+		if *req.WagePerHour < 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "wage_per_hour must be non-negative"})
+			return
+		}
+		wagePerHour = *req.WagePerHour
+	}
+
 	tier, premium, err := a.fetchTierFromPython(c.Request.Context(), req.Zone, req.ShiftStart, req.ShiftEnd)
 	if err != nil {
 		c.JSON(http.StatusBadGateway, gin.H{"error": "risk-tier service unavailable", "details": err.Error()})
@@ -268,6 +297,7 @@ func (a *App) registerUser(c *gin.Context) {
 		Active:        true,
 		RiskTier:      tier,
 		WeeklyPremium: premium,
+		WagePerHour:   wagePerHour,
 	}
 
 	if err := a.db.WithContext(c.Request.Context()).Create(&user).Error; err != nil {
@@ -275,6 +305,39 @@ func (a *App) registerUser(c *gin.Context) {
 		return
 	}
 
+	c.JSON(http.StatusCreated, buildAuthPayload(user))
+}
+
+func (a *App) loginUser(c *gin.Context) {
+	var req LoginRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	email := strings.TrimSpace(strings.ToLower(req.Email))
+	var user User
+	err := a.db.WithContext(c.Request.Context()).
+		Where("LOWER(email) = ?", email).
+		First(&user).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid email or password"})
+			return
+		}
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			c.Status(499)
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load user", "details": err.Error()})
+		return
+	}
+
+	// This MVP does not persist password hashes yet; keep route contract for frontend compatibility.
+	c.JSON(http.StatusOK, buildAuthPayload(user))
+}
+
+func buildAuthPayload(user User) gin.H {
 	basePrice := 250.0
 	aiRiskDiscount := user.WeeklyPremium - basePrice
 
@@ -288,19 +351,23 @@ func (a *App) registerUser(c *gin.Context) {
 		reason = "AI Analysis: High historical vulnerability to waterlogging and platform outages."
 	}
 
-	c.JSON(http.StatusCreated, gin.H{
+	return gin.H{
 		"id":             user.ID,
 		"email":          user.Email,
+		"full_name":      user.FullName,
 		"zone":           user.Zone,
+		"shift_start":    user.ShiftStart,
+		"shift_end":      user.ShiftEnd,
 		"tier":           user.RiskTier,
 		"weekly_premium": user.WeeklyPremium,
+		"wage_per_hour":  user.WagePerHour,
 		"pricing_breakdown": gin.H{
 			"base_price":       basePrice,
 			"ai_risk_discount": aiRiskDiscount,
 			"final_premium":    user.WeeklyPremium,
 			"reason":           reason,
 		},
-	})
+	}
 }
 
 func (a *App) getAdminMetrics(c *gin.Context) {
@@ -411,13 +478,21 @@ func (a *App) consumeDisruptionEvents(ctx context.Context) {
 		}
 
 		var event disruptionEvent
+		if a.validator != nil {
+			if err := a.validator.ValidateBytes(contractSchemaEventPayload, msg.Value); err != nil {
+				log.Printf("invalid disruption event contract payload: %v", err)
+				_ = reader.CommitMessages(ctx, msg)
+				continue
+			}
+		}
+
 		if err := json.Unmarshal(msg.Value, &event); err != nil {
 			log.Printf("invalid disruption event: %v", err)
 			_ = reader.CommitMessages(ctx, msg)
 			continue
 		}
 
-		if event.Zone == "" {
+		if event.ZoneID == "" {
 			log.Printf("disruption event missing zone: %s", string(msg.Value))
 			_ = reader.CommitMessages(ctx, msg)
 			continue
@@ -435,138 +510,168 @@ func (a *App) consumeDisruptionEvents(ctx context.Context) {
 
 func (a *App) processDisruptionEvent(ctx context.Context, event disruptionEvent) error {
 	var users []User
-	if err := a.db.WithContext(ctx).Where("zone = ? AND shift_status = ?", event.Zone, "active").Find(&users).Error; err != nil {
+	if err := a.db.WithContext(ctx).Where("zone = ? AND shift_status = ?", event.ZoneID, "active").Find(&users).Error; err != nil {
 		return err
 	}
 
 	if len(users) == 0 {
-		log.Printf("no active users in zone=%s", event.Zone)
+		log.Printf("no active users in zone=%s", event.ZoneID)
 		return nil
 	}
 
+	timestamp := time.Now().UTC().Unix()
+	if parsed, err := time.Parse(time.RFC3339, strings.TrimSpace(event.TriggeredAt)); err == nil {
+		timestamp = parsed.UTC().Unix()
+	}
+
+	eventID := strings.TrimSpace(event.EventID)
+	if eventID == "" {
+		eventID = uuid.NewString()
+	}
+
+	eventForPayout := Event{
+		ID:             eventID,
+		Type:           event.EventType,
+		SeverityFactor: event.SeverityFactor,
+		Timestamp:      timestamp,
+	}
+
+	usersByID := make(map[string]User, len(users))
 	payoutAmounts := make(map[string]float64, len(users))
-	wage := 150.0
-	lostHours := 3.0
 
-	batch := make([]verifyClaimItem, 0, len(users))
+	batch := make([]Claim, 0, len(users))
 	for _, u := range users {
-		calculatedAmount := lostHours * wage * event.SeverityFactor * 0.80
-		payoutAmounts[u.ID] = calculatedAmount
+		usersByID[u.ID] = u
 
-		batch = append(batch, verifyClaimItem{
-			UserID:             u.ID,
-			EventType:          event.EventType,
-			EventTimestamp:     event.Timestamp,
-			Zone:               u.Zone,
-			ClaimedAmount:      calculatedAmount,
-			AvgWeeklyEarnings:  700,
-			RecentClaims:       1,
-			SharedDeviceCount:  0,
-			LinkedAccountCount: 0,
+		policyStartAt := u.CreatedAt.Unix()
+		minimumPolicyAgeSeconds := int64((72 * time.Hour) / time.Second)
+		oldestAllowedStart := timestamp - minimumPolicyAgeSeconds
+		if policyStartAt == 0 || policyStartAt > oldestAllowedStart {
+			policyStartAt = oldestAllowedStart
+		}
+
+		calculatedAmount, calcErr := CalculatePayout(u, eventForPayout)
+		if calcErr != nil {
+			log.Printf("calculate payout failed user=%s event_id=%s err=%v", u.ID, eventID, calcErr)
+			continue
+		}
+
+		if calculatedAmount <= 0 {
+			log.Printf("skipping zero-value payout candidate user=%s event_id=%s", u.ID, eventID)
+			continue
+		}
+
+		payoutAmounts[u.ID] = calculatedAmount
+		currency := strings.ToLower(strings.TrimSpace(a.cfg.StripeCurrency))
+		if currency == "" {
+			currency = defaultPayoutCurrencyLower
+		}
+
+		batch = append(batch, Claim{
+			ClaimID:           uuid.NewString(),
+			WorkerID:          u.ID,
+			PolicyID:          u.ID,
+			PolicyStartedAt:   time.Unix(policyStartAt, 0).UTC(),
+			IsRenewal:         false,
+			ClaimedAmount:     calculatedAmount,
+			Currency:          currency,
+			AvgWeeklyEarnings: 700,
+			RecentClaims:      1,
+			DeviceLinkCount:   0,
+			AccountLinkCount:  0,
 		})
 	}
 
-	decisions, err := a.callVerifyClaims(ctx, batch)
-	if err != nil {
-		return fmt.Errorf("verify-claims failed event_id=%s: %w", event.EventID, err)
+	if len(batch) == 0 {
+		log.Printf("no eligible payout claims after validation event_id=%s", eventID)
+		return nil
 	}
 
-	autoApproved := make([]ClaimDecision, 0, len(decisions))
+	decisions, err := a.callVerifyClaims(ctx, eventID, event.EventType, event.ZoneID, batch)
+	if err != nil {
+		return fmt.Errorf("verify-claims failed event_id=%s: %w", eventID, err)
+	}
+
+	autoApproved := make([]FRSResult, 0, len(decisions))
 	for _, claim := range decisions {
-		if err := RecordClaim(a.db.WithContext(ctx), event.EventID, claim); err != nil {
-			log.Printf("record-claim failed event_id=%s user=%s err=%v", event.EventID, claim.UserID, err)
+		if err := RecordClaim(a.db.WithContext(ctx), eventID, claim); err != nil {
+			log.Printf("record-claim failed event_id=%s worker_id=%s err=%v", eventID, claim.WorkerID, err)
 		}
 
-		switch strings.ToUpper(strings.TrimSpace(claim.Decision)) {
-		case "AUTO-APPROVE":
+		switch normalizeDecision(claim.Decision) {
+		case "auto_approve":
 			autoApproved = append(autoApproved, claim)
-		case "FULL_WITHHOLD", "PARTIAL_HOLD":
-			log.Printf("claim held user=%s frs_score=%d decision=%s", claim.UserID, claim.FRSScore, claim.Decision)
+		case "full_withhold", "partial_hold":
+			log.Printf("claim held worker_id=%s frs_score=%d decision=%s", claim.WorkerID, claim.FRSScore, claim.Decision)
 		default:
-			log.Printf("claim decision unrecognized user=%s frs_score=%d decision=%s", claim.UserID, claim.FRSScore, claim.Decision)
+			log.Printf("claim decision unrecognized worker_id=%s frs_score=%d decision=%s", claim.WorkerID, claim.FRSScore, claim.Decision)
 		}
 	}
 
 	for _, claim := range autoApproved {
-		log.Printf("claim routed to payout user=%s score=%d decision=%s", claim.UserID, claim.FRSScore, claim.Decision)
+		log.Printf("claim routed to payout worker_id=%s score=%d decision=%s", claim.WorkerID, claim.FRSScore, claim.Decision)
 	}
-	log.Printf("event_id=%s routed %d claims to payout", event.EventID, len(autoApproved))
-
-	sqlDB, err := a.db.DB()
-	if err != nil {
-		return fmt.Errorf("get sql db handle: %w", err)
-	}
+	log.Printf("event_id=%s routed %d claims to payout", eventID, len(autoApproved))
 
 	for _, claim := range autoApproved {
-		amount, ok := payoutAmounts[claim.UserID]
+		_, ok := payoutAmounts[claim.WorkerID]
 		if !ok {
-			log.Printf("payout amount missing for user=%s event_id=%s", claim.UserID, event.EventID)
+			log.Printf("payout amount missing for worker_id=%s event_id=%s", claim.WorkerID, eventID)
 			continue
 		}
 
-		if err := ProcessPayout(sqlDB, claim.UserID, amount); err != nil {
-			log.Printf("payout handoff failed user=%s event_id=%s err=%v", claim.UserID, event.EventID, err)
+		user, ok := usersByID[claim.WorkerID]
+		if !ok {
+			log.Printf("user context missing for payout worker_id=%s event_id=%s", claim.WorkerID, eventID)
 			continue
 		}
+
+		paidAmount, payoutErr := a.ProcessPayout(ctx, user, eventForPayout, claim)
+		if payoutErr != nil {
+			log.Printf("payout failed worker_id=%s event_id=%s err=%v", claim.WorkerID, eventID, payoutErr)
+			continue
+		}
+
+		log.Printf("payout completed worker_id=%s event_id=%s amount=%.2f", claim.WorkerID, eventID, paidAmount)
 	}
 
 	return nil
 }
 
-func (a *App) callVerifyClaims(ctx context.Context, batch []verifyClaimItem) ([]ClaimDecision, error) {
-	body, err := json.Marshal(batch)
+func (a *App) callVerifyClaims(ctx context.Context, eventID string, eventType string, zoneID string, claims []Claim) ([]FRSResult, error) {
+	results, err := SendBatchClaimsToFraudEngine(ctx, a.httpClient, a.cfg.FraudEngineURL, eventID, eventType, zoneID, claims, a.validator)
 	if err != nil {
 		return nil, err
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, a.cfg.AIEngineURL+"/verify-claims", bytes.NewBuffer(body))
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := a.httpClient.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("verify-claims returned status %d", resp.StatusCode)
-	}
-
-	rawBody, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("read verify-claims response: %w", err)
-	}
-
-	var decisions []ClaimDecision
-	if err := json.Unmarshal(rawBody, &decisions); err != nil {
-		return nil, fmt.Errorf("unmarshal verify-claims response: %w", err)
-	}
-
-	return decisions, nil
+	return results, nil
 }
 
-func RecordClaim(db *gorm.DB, eventID string, claim ClaimDecision) error {
-	normalizedDecision := strings.ToUpper(strings.TrimSpace(claim.Decision))
+func RecordClaim(db *gorm.DB, eventID string, claim FRSResult) error {
+	normalizedDecision := normalizeDecision(claim.Decision)
 	status := mapClaimStatus(normalizedDecision)
 
 	query := `
-		INSERT INTO claims (event_id, user_id, frs_score, decision, status, created_at)
-		VALUES ($1, $2, $3, $4, $5, $6)
+		INSERT INTO claims (id, event_id, user_id, frs_score, decision, status, created_at)
+		VALUES ($1::uuid, $2, $3, $4, $5, $6, $7)
 	`
+
+	claimID := strings.TrimSpace(claim.ClaimID)
+	if claimID == "" {
+		claimID = uuid.NewString()
+	}
 
 	if err := db.Exec(
 		query,
+		claimID,
 		eventID,
-		claim.UserID,
+		claim.WorkerID,
 		claim.FRSScore,
 		normalizedDecision,
 		status,
 		time.Now().UTC(),
 	).Error; err != nil {
-		return fmt.Errorf("insert claim user=%s: %w", claim.UserID, err)
+		return fmt.Errorf("insert claim worker_id=%s: %w", claim.WorkerID, err)
 	}
 
 	return nil
@@ -574,49 +679,64 @@ func RecordClaim(db *gorm.DB, eventID string, claim ClaimDecision) error {
 
 func mapClaimStatus(decision string) string {
 	switch decision {
-	case "AUTO-APPROVE":
+	case "auto_approve":
 		return "approved"
-	case "FULL_WITHHOLD", "PARTIAL_HOLD":
+	case "full_withhold", "partial_hold":
 		return "under_review"
 	default:
 		return "under_review"
 	}
 }
 
-func ProcessPayout(db *sql.DB, userID string, amount float64) error {
-	// Phase 2 stub for Member 5 handoff.
-	// Replace this ledger update with the final payout orchestrator implementation.
-	if _, err := db.Exec(
-		"UPDATE ledgers SET balance = balance + $2 WHERE user_id = $1;",
-		userID,
-		amount,
-	); err != nil {
-		return fmt.Errorf("update ledger user=%s: %w", userID, err)
+func ParseAndRouteClaims(raw []byte) ([]FRSResult, error) {
+	if len(raw) == 0 {
+		return []FRSResult{}, nil
 	}
 
-	log.Printf("SUCCESS: Handed off user %s for payout. Ledger updated by %.2f.", userID, amount)
-	return nil
-}
+	var wrapped BatchFRSResponse
+	if err := json.Unmarshal(raw, &wrapped); err == nil {
+		if wrapped.Results != nil || bytes.Contains(raw, []byte(`"results"`)) {
+			return filterAutoApprovedClaims(wrapped.Results), nil
+		}
+	}
 
-func ParseAndRouteClaims(raw []byte) ([]ClaimDecision, error) {
-	var decisions []ClaimDecision
+	var decisions []FRSResult
 	if err := json.Unmarshal(raw, &decisions); err != nil {
 		return nil, err
 	}
 
-	autoApproved := make([]ClaimDecision, 0, len(decisions))
+	return filterAutoApprovedClaims(decisions), nil
+}
+
+func filterAutoApprovedClaims(decisions []FRSResult) []FRSResult {
+	autoApproved := make([]FRSResult, 0, len(decisions))
 	for _, claim := range decisions {
-		switch strings.ToUpper(strings.TrimSpace(claim.Decision)) {
-		case "AUTO-APPROVE":
+		switch normalizeDecision(claim.Decision) {
+		case "auto_approve":
 			autoApproved = append(autoApproved, claim)
-		case "FULL_WITHHOLD", "PARTIAL_HOLD":
-			log.Printf("claim held user=%s frs_score=%d decision=%s", claim.UserID, claim.FRSScore, claim.Decision)
+		case "full_withhold", "partial_hold":
+			log.Printf("claim held worker_id=%s frs_score=%d decision=%s", claim.WorkerID, claim.FRSScore, claim.Decision)
 		default:
-			log.Printf("claim decision unrecognized user=%s frs_score=%d decision=%s", claim.UserID, claim.FRSScore, claim.Decision)
+			log.Printf("claim decision unrecognized worker_id=%s frs_score=%d decision=%s", claim.WorkerID, claim.FRSScore, claim.Decision)
 		}
 	}
 
-	return autoApproved, nil
+	return autoApproved
+}
+
+func normalizeDecision(decision string) string {
+	normalized := strings.ToLower(strings.TrimSpace(decision))
+	normalized = strings.ReplaceAll(normalized, "-", "_")
+	if normalized == "autoapprove" {
+		return "auto_approve"
+	}
+	if normalized == "partialhold" {
+		return "partial_hold"
+	}
+	if normalized == "fullwithhold" {
+		return "full_withhold"
+	}
+	return normalized
 }
 
 func (a *App) callEvaluateFRS(ctx context.Context, payload frsRequest) (*frsResponse, error) {
@@ -692,33 +812,36 @@ func (a *App) runWeatherPoller(ctx context.Context) {
 }
 
 func (a *App) pollAndStoreWeather(ctx context.Context) {
-	fetchCfg := signals.FetchConfig{
-		BaseURL:     a.cfg.OpenMeteoBaseURL,
-		Latitude:    a.cfg.PollingLatitude,
-		Longitude:   a.cfg.PollingLongitude,
-		PollingZone: a.cfg.PollingZone,
+	locations := []signals.FetchConfig{
+		{BaseURL: a.cfg.OpenMeteoBaseURL, Latitude: a.cfg.PollingLatitude, Longitude: a.cfg.PollingLongitude, PollingZone: a.cfg.PollingZone},
+		{BaseURL: a.cfg.OpenMeteoBaseURL, Latitude: 12.9279, Longitude: 77.6271, PollingZone: "koramangala_blr"},
+		{BaseURL: a.cfg.OpenMeteoBaseURL, Latitude: 19.1136, Longitude: 72.8697, PollingZone: "andheri_mum"},
+		{BaseURL: a.cfg.OpenMeteoBaseURL, Latitude: 13.0418, Longitude: 80.2341, PollingZone: "t_nagar_che"},
+		{BaseURL: a.cfg.OpenMeteoBaseURL, Latitude: 17.4435, Longitude: 78.3772, PollingZone: "hitech_city_hyd"},
 	}
 
-	reading, err := signals.FetchWeatherSignal(ctx, a.httpClient, fetchCfg)
-	if err != nil {
-		log.Printf("[poller] fetch failed: %v", err)
-		return
-	}
+	for _, fetchCfg := range locations {
+		reading, err := signals.FetchWeatherSignal(ctx, a.httpClient, fetchCfg)
+		if err != nil {
+			log.Printf("[poller] fetch failed for zone %s: %v", fetchCfg.PollingZone, err)
+			continue
+		}
 
-	newID := uuid.NewString()
-	_, err = signals.SaveSignal(a.db.WithContext(ctx), reading, newID)
-	if err != nil {
-		log.Printf("[poller] save failed: %v", err)
-		return
-	}
+		newID := uuid.NewString()
+		_, err = signals.SaveSignal(a.db.WithContext(ctx), reading, newID)
+		if err != nil {
+			log.Printf("[poller] save failed for zone %s: %v", fetchCfg.PollingZone, err)
+			continue
+		}
 
-	log.Printf("[poller] fetched weather zone=%s precipitation=%.2fmm threshold_crossed=%v",
+		log.Printf("[poller] fetched weather zone=%s precipitation=%.2fmm threshold_crossed=%v",
+
 		reading.Zone, reading.PrecipitationMM, reading.ThresholdCrossed)
 
-	if reading.ThresholdCrossed {
-		// Just log for now. Let the Kafka group handle publish if necessary.
-		log.Printf("TRIGGER: %s zone=%s precipitation=%.2fmm wind=%.2fkmh",
-			reading.EventType, reading.Zone, reading.PrecipitationMM, reading.WindSpeedKMH)
+		if reading.ThresholdCrossed {
+			log.Printf("TRIGGER: %s zone=%s precipitation=%.2fmm wind=%.2fkmh",
+				reading.EventType, reading.Zone, reading.PrecipitationMM, reading.WindSpeedKMH)
+		}
 	}
 }
 
