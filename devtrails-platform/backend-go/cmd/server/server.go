@@ -15,6 +15,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/devtrails/backend-go/internal/downtime"
 	"github.com/devtrails/backend-go/internal/reports"
 	"github.com/devtrails/backend-go/internal/signals"
 	"github.com/gin-gonic/gin"
@@ -171,7 +172,7 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("postgres connect: %w", err)
 	}
-	if err := db.AutoMigrate(&User{}, &signals.WeatherSignal{}, &reports.UserReport{}); err != nil {
+	if err := db.AutoMigrate(&User{}, &signals.WeatherSignal{}, &reports.UserReport{}, &downtime.ServiceHealth{}); err != nil {
 		return fmt.Errorf("automigrate: %w", err)
 	}
 
@@ -205,6 +206,7 @@ func run() error {
 
 	go app.consumeDisruptionEvents(ctx)
 	go app.runWeatherPoller(ctx)
+	go downtime.StartPoller(db)
 
 	router := gin.Default()
 	router.Use(corsMiddleware())
@@ -231,6 +233,7 @@ func run() error {
 	router.GET("/api/wallet", app.getWallet)
 	router.GET("/api/payouts", app.listPayouts)
 	router.GET("/api/claims", app.listClaims)
+	router.GET("/api/v1/isitdown", app.checkDowntime)
 	srv := &http.Server{
 		Addr:              ":" + cfg.Port,
 		Handler:           router,
@@ -954,5 +957,60 @@ func (a *App) listReports(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"data":  res,
 		"count": len(res),
+	})
+}
+
+func (a *App) checkDowntime(c *gin.Context) {
+	service := c.Query("service")
+	zone := c.Query("zone")
+
+	if service == "" || zone == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "service and zone are required"})
+		return
+	}
+
+	// 1. Get automated ping status
+	health, err := downtime.GetLatestHealth(a.db, service, zone)
+
+	// 2. See if multiple users have reported downtime for this service & zone
+	// in the last 15 minutes.
+	var userReportCount int64
+	fifteenMinsAgo := time.Now().UTC().Add(-15 * time.Minute)
+
+	// Details or Category should match 'downtime' or 'service'
+	a.db.Model(&reports.UserReport{}).
+		Where("zone = ? AND category = ? AND reported_at >= ?", zone, "downtime", fifteenMinsAgo).
+		Count(&userReportCount)
+
+	// Decide overall status
+	isDown := false
+	statusMsg := "operational"
+
+	if err == nil {
+		if !health.IsUp {
+			isDown = true
+			statusMsg = "down_via_automated_check"
+		}
+	} else {
+		// No automated health record yet
+		health.StatusCode = 0
+		health.LatencyMs = 0
+	}
+
+	if !isDown && userReportCount >= 3 {
+		// If automated check missed it, but users are screaming it's down!
+		isDown = true
+		statusMsg = "down_via_user_reports"
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"service":               service,
+		"zone":                  zone,
+		"is_down":               isDown,
+		"status_msg":            statusMsg,
+		"automated_status_code": health.StatusCode,
+		"automated_latency_ms":  health.LatencyMs,
+		"user_reports_count":    userReportCount,
+		"last_checked_at":       health.CheckedAt,
 	})
 }
