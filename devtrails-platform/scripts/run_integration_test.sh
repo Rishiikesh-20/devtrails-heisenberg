@@ -188,7 +188,7 @@ wait_for_http "http://localhost:8000/health" "Python AI Engine health endpoint"
 wait_for_http "http://localhost:8080/health" "Go orchestrator health endpoint"
 
 log_step "Step 3: Seed the victim user"
-REGISTER_RESPONSE="$(curl -fsS -X POST http://localhost:8080/api/register \
+REGISTER_RESPONSE="$(curl -fsS -X POST http://localhost:8080/api/v1/register \
 	-H 'Content-Type: application/json' \
 	-d '{"email":"raju@test.com","full_name":"Raju Delivery","zone":"south_delhi","shift_start":"08:00","shift_end":"18:00"}')"
 echo "$REGISTER_RESPONSE"
