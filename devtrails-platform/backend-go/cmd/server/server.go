@@ -119,6 +119,12 @@ type ClaimDecision struct {
 	Decision string `json:"decision"`
 }
 
+type AdminMetrics struct {
+	TotalActivePolicies int     `json:"total_active_policies"`
+	TotalApprovedClaims int     `json:"total_approved_claims"`
+	TotalDisbursedINR   float64 `json:"total_disbursed_inr"`
+}
+
 func main() {
 	if err := run(); err != nil {
 		log.Fatalf("server failed: %v", err)
@@ -130,7 +136,7 @@ func run() error {
 
 	cfg := ServerConfig{
 		Port:                 env("PORT", "8080"),
-		DatabaseURL:          env("DATABASE_URL", "postgres://devtrails:devtrails_secret@localhost:5432/devtrails_core?sslmode=disable"),
+		DatabaseURL:          env("DATABASE_URL", "postgres://devtrails:devtrails_secret@localhost:55432/devtrails_core?sslmode=disable"),
 		RedisAddr:            env("REDIS_ADDR", "localhost:6379"),
 		KafkaBroker:          env("KAFKA_BROKER", "localhost:9092"),
 		KafkaTopicDisruption: env("KAFKA_TOPIC_DISRUPTION", "disruption-events"),
@@ -166,10 +172,15 @@ func run() error {
 	go app.consumeDisruptionEvents(ctx)
 
 	router := gin.Default()
+	router.Use(corsMiddleware())
+	router.OPTIONS("/*path", func(c *gin.Context) {
+		c.Status(http.StatusNoContent)
+	})
 	router.GET("/health", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"status": "ok", "service": "backend-go-core-api"})
 	})
 	router.POST("/api/register", app.registerUser)
+	router.GET("/api/admin/metrics", app.getAdminMetrics)
 
 	srv := &http.Server{
 		Addr:              ":" + cfg.Port,
@@ -235,13 +246,67 @@ func (a *App) registerUser(c *gin.Context) {
 		return
 	}
 
+	basePrice := 250.0
+	aiRiskDiscount := user.WeeklyPremium - basePrice
+
+	reason := "AI Analysis: Standard risk baseline applied."
+	switch user.RiskTier {
+	case 1:
+		reason = "AI Analysis: Low historical disruption frequency. High reliability zone."
+	case 2:
+		reason = "AI Analysis: Moderate traffic constraints and seasonal weather risks detected."
+	case 3:
+		reason = "AI Analysis: High historical vulnerability to waterlogging and platform outages."
+	}
+
 	c.JSON(http.StatusCreated, gin.H{
 		"id":             user.ID,
 		"email":          user.Email,
 		"zone":           user.Zone,
 		"tier":           user.RiskTier,
 		"weekly_premium": user.WeeklyPremium,
+		"pricing_breakdown": gin.H{
+			"base_price":       basePrice,
+			"ai_risk_discount": aiRiskDiscount,
+			"final_premium":    user.WeeklyPremium,
+			"reason":           reason,
+		},
 	})
+}
+
+func (a *App) getAdminMetrics(c *gin.Context) {
+	var metrics AdminMetrics
+
+	if err := a.db.Raw("SELECT COUNT(*) FROM users WHERE active = true;").Scan(&metrics.TotalActivePolicies).Error; err != nil {
+		log.Printf("admin metrics query failed total_active_policies err=%v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load admin metrics"})
+		return
+	}
+
+	if err := a.db.Raw("SELECT COUNT(*) FROM claims WHERE status = 'approved';").Scan(&metrics.TotalApprovedClaims).Error; err != nil {
+		log.Printf("admin metrics query failed total_approved_claims err=%v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load admin metrics"})
+		return
+	}
+
+	var hasLedgers bool
+	if err := a.db.Raw("SELECT to_regclass('public.ledgers') IS NOT NULL;").Scan(&hasLedgers).Error; err != nil {
+		log.Printf("admin metrics query failed ledgers table check err=%v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load admin metrics"})
+		return
+	}
+
+	if hasLedgers {
+		if err := a.db.Raw("SELECT COALESCE(SUM(balance), 0) FROM ledgers;").Scan(&metrics.TotalDisbursedINR).Error; err != nil {
+			log.Printf("admin metrics query failed total_disbursed_inr err=%v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load admin metrics"})
+			return
+		}
+	} else {
+		metrics.TotalDisbursedINR = 0
+	}
+
+	c.JSON(http.StatusOK, metrics)
 }
 
 func (a *App) fetchTierFromPython(ctx context.Context, zone, shiftStart, shiftEnd string) (int, float64, error) {
@@ -339,14 +404,21 @@ func (a *App) processDisruptionEvent(ctx context.Context, event disruptionEvent)
 		return nil
 	}
 
+	payoutAmounts := make(map[string]float64, len(users))
+	wage := 150.0
+	lostHours := 3.0
+
 	batch := make([]verifyClaimItem, 0, len(users))
 	for _, u := range users {
+		calculatedAmount := lostHours * wage * event.SeverityFactor * 0.80
+		payoutAmounts[u.ID] = calculatedAmount
+
 		batch = append(batch, verifyClaimItem{
 			UserID:             u.ID,
 			EventType:          event.EventType,
 			EventTimestamp:     event.Timestamp,
 			Zone:               u.Zone,
-			ClaimedAmount:      220 + event.SeverityFactor*40,
+			ClaimedAmount:      calculatedAmount,
 			AvgWeeklyEarnings:  700,
 			RecentClaims:       1,
 			SharedDeviceCount:  0,
@@ -386,7 +458,13 @@ func (a *App) processDisruptionEvent(ctx context.Context, event disruptionEvent)
 	}
 
 	for _, claim := range autoApproved {
-		if err := ProcessPayout(sqlDB, claim.UserID); err != nil {
+		amount, ok := payoutAmounts[claim.UserID]
+		if !ok {
+			log.Printf("payout amount missing for user=%s event_id=%s", claim.UserID, event.EventID)
+			continue
+		}
+
+		if err := ProcessPayout(sqlDB, claim.UserID, amount); err != nil {
 			log.Printf("payout handoff failed user=%s event_id=%s err=%v", claim.UserID, event.EventID, err)
 			continue
 		}
@@ -457,25 +535,26 @@ func RecordClaim(db *gorm.DB, eventID string, claim ClaimDecision) error {
 func mapClaimStatus(decision string) string {
 	switch decision {
 	case "AUTO-APPROVE":
-		return "pending_payout"
+		return "approved"
 	case "FULL_WITHHOLD", "PARTIAL_HOLD":
-		return "investigating"
+		return "under_review"
 	default:
-		return "investigating"
+		return "under_review"
 	}
 }
 
-func ProcessPayout(db *sql.DB, userID string) error {
+func ProcessPayout(db *sql.DB, userID string, amount float64) error {
 	// Phase 2 stub for Member 5 handoff.
 	// Replace this ledger update with the final payout orchestrator implementation.
 	if _, err := db.Exec(
-		"UPDATE ledgers SET balance = balance + 360 WHERE user_id = $1;",
+		"UPDATE ledgers SET balance = balance + $2 WHERE user_id = $1;",
 		userID,
+		amount,
 	); err != nil {
 		return fmt.Errorf("update ledger user=%s: %w", userID, err)
 	}
 
-	log.Printf("SUCCESS: Handed off user %s for payout. Ledger updated.", userID)
+	log.Printf("SUCCESS: Handed off user %s for payout. Ledger updated by %.2f.", userID, amount)
 	return nil
 }
 
@@ -523,6 +602,29 @@ func (a *App) callEvaluateFRS(ctx context.Context, payload frsRequest) (*frsResp
 		return nil, err
 	}
 	return &parsed, nil
+}
+
+func corsMiddleware() gin.HandlerFunc {
+	allowedOrigin := env("CORS_ALLOWED_ORIGIN", "http://localhost:3000")
+
+	return func(c *gin.Context) {
+		origin := c.GetHeader("Origin")
+		if origin == allowedOrigin {
+			c.Header("Access-Control-Allow-Origin", origin)
+		}
+
+		c.Header("Vary", "Origin")
+		c.Header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+		c.Header("Access-Control-Allow-Headers", "Content-Type, Authorization")
+		c.Header("Access-Control-Allow-Credentials", "true")
+
+		if c.Request.Method == http.MethodOptions {
+			c.AbortWithStatus(http.StatusNoContent)
+			return
+		}
+
+		c.Next()
+	}
 }
 
 func env(key, fallback string) string {
