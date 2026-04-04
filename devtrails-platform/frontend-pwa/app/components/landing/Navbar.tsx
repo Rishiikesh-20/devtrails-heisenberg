@@ -25,11 +25,22 @@ export function Navbar() {
           {/* Logo */}
           <a href="#" className="flex items-center gap-2.5 group">
             <div className="w-8 h-8 rounded-lg bg-electric flex items-center justify-center transition-transform group-hover:scale-105">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <svg
+                width="18"
+                height="18"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="white"
+                strokeWidth="2.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
                 <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
               </svg>
             </div>
-            <span className="text-white font-bold text-lg tracking-tight">WageLock</span>
+            <span className="text-white font-bold text-lg tracking-tight">
+              WageLock
+            </span>
           </a>
 
           {/* Nav Links — Desktop */}
@@ -43,7 +54,7 @@ export function Navbar() {
                 >
                   {item}
                 </a>
-              )
+              ),
             )}
           </div>
 
@@ -56,7 +67,7 @@ export function Navbar() {
               Sign In
             </a>
             <a
-              href="/signup"
+              href="/onboarding"
               className="inline-flex items-center gap-1.5 bg-electric hover:bg-electric-600 text-white text-sm font-semibold px-4 py-2 rounded-xl transition-colors"
               id="nav-get-started"
             >
