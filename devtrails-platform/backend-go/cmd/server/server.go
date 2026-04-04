@@ -84,6 +84,20 @@ type LoginRequest struct {
 	Password string `json:"password" binding:"required"`
 }
 
+type riskQuoteRequest struct {
+	Zone       string `json:"zone" binding:"required"`
+	ShiftStart string `json:"shift_start" binding:"required"`
+	ShiftEnd   string `json:"shift_end" binding:"required"`
+}
+
+type simulateDisruptionRequest struct {
+	EventType      string   `json:"event_type" binding:"required"`
+	ZoneID         string   `json:"zone_id" binding:"required"`
+	SeverityFactor *float64 `json:"severity_factor,omitempty"`
+	TriggeredAt    string   `json:"triggered_at,omitempty"`
+	EventID        string   `json:"event_id,omitempty"`
+}
+
 type tierRequest struct {
 	Zone       string `json:"zone"`
 	ShiftStart string `json:"shift_start"`
@@ -219,12 +233,16 @@ func run() error {
 	})
 	router.POST("/api/v1/register", app.registerUser)
 	router.POST("/api/v1/login", app.loginUser)
+	router.POST("/api/v1/risk/quote", app.quoteRisk)
+	router.POST("/api/v1/simulate-event", app.simulateDisruptionEvent)
 	router.POST("/api/v1/reports", app.submitReport)
 	router.GET("/api/v1/reports", app.listReports)
 	router.GET("/api/v1/admin/metrics", app.getAdminMetrics)
 	router.GET("/api/v1/weather", app.listWeather)
 	router.POST("/api/register", app.registerUser)
 	router.POST("/api/login", app.loginUser)
+	router.POST("/api/risk/quote", app.quoteRisk)
+	router.POST("/api/simulate-event", app.simulateDisruptionEvent)
 	router.GET("/api/admin/metrics", app.getAdminMetrics)
 	router.GET("/api/signals", app.listWeather)
 	router.GET("/wallet", app.getWallet)
@@ -340,12 +358,93 @@ func (a *App) loginUser(c *gin.Context) {
 	c.JSON(http.StatusOK, buildAuthPayload(user))
 }
 
-func buildAuthPayload(user User) gin.H {
+func (a *App) quoteRisk(c *gin.Context) {
+	var req riskQuoteRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	tier, premium, err := a.fetchTierFromPython(c.Request.Context(), req.Zone, req.ShiftStart, req.ShiftEnd)
+	if err != nil {
+		c.JSON(http.StatusBadGateway, gin.H{"error": "risk-tier service unavailable", "details": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"zone":              req.Zone,
+		"shift_start":       req.ShiftStart,
+		"shift_end":         req.ShiftEnd,
+		"tier":              tier,
+		"weekly_premium":    premium,
+		"pricing_breakdown": buildPricingBreakdown(tier, premium),
+	})
+}
+
+func (a *App) simulateDisruptionEvent(c *gin.Context) {
+	var req simulateDisruptionRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	severity := 1.0
+	if req.SeverityFactor != nil {
+		if *req.SeverityFactor <= 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "severity_factor must be greater than zero"})
+			return
+		}
+		severity = *req.SeverityFactor
+	}
+
+	eventID := strings.TrimSpace(req.EventID)
+	if eventID == "" {
+		eventID = uuid.NewString()
+	}
+
+	triggeredAt := strings.TrimSpace(req.TriggeredAt)
+	if triggeredAt == "" {
+		triggeredAt = time.Now().UTC().Format(time.RFC3339)
+	} else if _, err := time.Parse(time.RFC3339, triggeredAt); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "triggered_at must be RFC3339 format"})
+		return
+	}
+
+	event := disruptionEvent{
+		EventID:        eventID,
+		EventType:      strings.TrimSpace(req.EventType),
+		ZoneID:         strings.TrimSpace(req.ZoneID),
+		SeverityFactor: severity,
+		TriggeredAt:    triggeredAt,
+		Source:         "frontend-demo",
+	}
+
+	if event.EventType == "" || event.ZoneID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "event_type and zone_id are required"})
+		return
+	}
+
+	if err := a.processDisruptionEvent(c.Request.Context(), event); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to process disruption event", "details": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message":         "disruption event processed",
+		"event_id":        event.EventID,
+		"event_type":      event.EventType,
+		"zone_id":         event.ZoneID,
+		"severity_factor": event.SeverityFactor,
+		"triggered_at":    event.TriggeredAt,
+	})
+}
+
+func buildPricingBreakdown(riskTier int, weeklyPremium float64) gin.H {
 	basePrice := 250.0
-	aiRiskDiscount := user.WeeklyPremium - basePrice
+	aiRiskDiscount := weeklyPremium - basePrice
 
 	reason := "AI Analysis: Standard risk baseline applied."
-	switch user.RiskTier {
+	switch riskTier {
 	case 1:
 		reason = "AI Analysis: Low historical disruption frequency. High reliability zone."
 	case 2:
@@ -355,21 +454,25 @@ func buildAuthPayload(user User) gin.H {
 	}
 
 	return gin.H{
-		"id":             user.ID,
-		"email":          user.Email,
-		"full_name":      user.FullName,
-		"zone":           user.Zone,
-		"shift_start":    user.ShiftStart,
-		"shift_end":      user.ShiftEnd,
-		"tier":           user.RiskTier,
-		"weekly_premium": user.WeeklyPremium,
-		"wage_per_hour":  user.WagePerHour,
-		"pricing_breakdown": gin.H{
-			"base_price":       basePrice,
-			"ai_risk_discount": aiRiskDiscount,
-			"final_premium":    user.WeeklyPremium,
-			"reason":           reason,
-		},
+		"base_price":       basePrice,
+		"ai_risk_discount": aiRiskDiscount,
+		"final_premium":    weeklyPremium,
+		"reason":           reason,
+	}
+}
+
+func buildAuthPayload(user User) gin.H {
+	return gin.H{
+		"id":                user.ID,
+		"email":             user.Email,
+		"full_name":         user.FullName,
+		"zone":              user.Zone,
+		"shift_start":       user.ShiftStart,
+		"shift_end":         user.ShiftEnd,
+		"tier":              user.RiskTier,
+		"weekly_premium":    user.WeeklyPremium,
+		"wage_per_hour":     user.WagePerHour,
+		"pricing_breakdown": buildPricingBreakdown(user.RiskTier, user.WeeklyPremium),
 	}
 }
 
@@ -839,7 +942,7 @@ func (a *App) pollAndStoreWeather(ctx context.Context) {
 
 		log.Printf("[poller] fetched weather zone=%s precipitation=%.2fmm threshold_crossed=%v",
 
-		reading.Zone, reading.PrecipitationMM, reading.ThresholdCrossed)
+			reading.Zone, reading.PrecipitationMM, reading.ThresholdCrossed)
 
 		if reading.ThresholdCrossed {
 			log.Printf("TRIGGER: %s zone=%s precipitation=%.2fmm wind=%.2fkmh",
