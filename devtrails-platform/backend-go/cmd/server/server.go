@@ -208,7 +208,7 @@ func run() error {
 	router.POST("/api/register", app.registerUser)
 	router.GET("/api/admin/metrics", app.getAdminMetrics)
 	router.GET("/api/signals", app.listSignals)
-
+	// i aded a new line to checklets see
 	srv := &http.Server{
 		Addr:              ":" + cfg.Port,
 		Handler:           router,
