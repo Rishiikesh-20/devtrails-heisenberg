@@ -19,6 +19,7 @@ type OpenMeteoResponse struct {
 		Rain          string `json:"rain"`
 		Weathercode   string `json:"weathercode"`
 		Windspeed10m  string `json:"windspeed_10m"`
+		Temperature2m string `json:"temperature_2m"`
 	} `json:"current_units"`
 	Current struct {
 		Time          string  `json:"time"`
@@ -27,6 +28,7 @@ type OpenMeteoResponse struct {
 		Rain          float64 `json:"rain"`
 		Weathercode   int     `json:"weathercode"`
 		Windspeed10m  float64 `json:"windspeed_10m"`
+		Temperature2m float64 `json:"temperature_2m"`
 	} `json:"current"`
 }
 
@@ -37,6 +39,7 @@ type SignalReading struct {
 	PrecipitationMM  float64
 	RainMM           float64
 	WindSpeedKMH     float64
+	TemperatureC     float64
 	WeatherCode      int
 	WeatherSummary   string
 	ThresholdCrossed bool
@@ -80,7 +83,7 @@ func FetchWeatherSignal(ctx context.Context, httpClient *http.Client, cfg FetchC
 	q := reqURL.Query()
 	q.Set("latitude", fmt.Sprintf("%f", cfg.Latitude))
 	q.Set("longitude", fmt.Sprintf("%f", cfg.Longitude))
-	q.Set("current", "precipitation,rain,weathercode,windspeed_10m")
+	q.Set("current", "precipitation,rain,weathercode,windspeed_10m,temperature_2m")
 	q.Set("timezone", "auto")
 	q.Set("forecast_days", "1")
 	reqURL.RawQuery = q.Encode()
@@ -112,6 +115,7 @@ func FetchWeatherSignal(ctx context.Context, httpClient *http.Client, cfg FetchC
 		PrecipitationMM:  omResp.Current.Precipitation,
 		RainMM:           omResp.Current.Rain,
 		WindSpeedKMH:     omResp.Current.Windspeed10m,
+		TemperatureC:     omResp.Current.Temperature2m,
 		WeatherCode:      omResp.Current.Weathercode,
 		WeatherSummary:   WeatherCodeSummary(omResp.Current.Weathercode),
 		PolledAt:         time.Now().UTC(),

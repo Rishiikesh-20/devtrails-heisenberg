@@ -2,11 +2,20 @@ import json
 import os
 import random
 import time
-import uuid
 from datetime import datetime, timezone
+from typing import TypedDict
 
 import schedule
 from kafka import KafkaProducer
+
+
+DEFAULT_EVENT_ZONE = "south_delhi"
+
+
+class EventPayload(TypedDict):
+    zone: str
+    severity_factor: float
+    timestamp: str
 
 
 def get_kafka_producer() -> KafkaProducer:
@@ -24,19 +33,29 @@ def mock_openweathermap() -> dict:
     return {"rainfall_mm": rainfall}
 
 
+def normalize_zone(zone: str) -> str:
+    normalized = zone.strip().lower().replace(" ", "_").replace("-", "_")
+    return normalized or DEFAULT_EVENT_ZONE
+
+
+def build_event(*, severity_factor: float, zone: str = DEFAULT_EVENT_ZONE) -> EventPayload:
+    return {
+        "zone": normalize_zone(zone),
+        "severity_factor": severity_factor,
+        "timestamp": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+    }
+
+
 def check_weather_and_produce() -> None:
     weather_data = mock_openweathermap()
     rainfall = weather_data["rainfall_mm"]
 
     # Only produce event if rainfall > 15mm
     if rainfall > 15.0:
-        event_payload = {
-            "event_id": str(uuid.uuid4()),
-            "event_type": "heavy_rain",
-            "zone": "south_delhi_h3_index",
-            "severity": 1.0,
-            "timestamp": int(datetime.now(timezone.utc).timestamp()),
-        }
+        event_payload = build_event(
+            severity_factor=1.0,
+            zone=os.getenv("EVENT_ZONE", DEFAULT_EVENT_ZONE),
+        )
 
         try:
             producer = get_kafka_producer()

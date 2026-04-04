@@ -46,6 +46,6 @@ PARTIAL_HOLD_MAX = 65              # 31-65: 90% released, 10% held
 # 66-100: full withhold + manual review
 
 # ─── Payment Decision Labels ─────────────────────────────────────────
-DECISION_AUTO_APPROVE = "AUTO_APPROVE"
-DECISION_PARTIAL_HOLD = "PARTIAL_HOLD"
-DECISION_FULL_WITHHOLD = "FULL_WITHHOLD"
+DECISION_AUTO_APPROVE = "auto_approve"
+DECISION_PARTIAL_HOLD = "partial_hold"
+DECISION_FULL_WITHHOLD = "full_withhold"

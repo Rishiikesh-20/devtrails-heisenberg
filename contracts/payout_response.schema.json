@@ -1,0 +1,94 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://devtrails.local/contracts/payout_response.schema.json",
+  "title": "payout_response",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "worker_id",
+    "currency",
+    "as_of",
+    "items"
+  ],
+  "properties": {
+    "worker_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "currency": {
+      "type": "string",
+      "pattern": "^[a-z]{3}$"
+    },
+    "as_of": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "items": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "payout_id",
+          "claim_id",
+          "event_id",
+          "amount",
+          "status",
+          "decision",
+          "created_at",
+          "processed_at"
+        ],
+        "properties": {
+          "payout_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "claim_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "event_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "amount": {
+            "type": "number",
+            "minimum": 0
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "processing",
+              "credited",
+              "held",
+              "failed"
+            ]
+          },
+          "decision": {
+            "type": "string",
+            "enum": [
+              "auto_approve",
+              "partial_hold",
+              "full_withhold"
+            ]
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "processed_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "failure_reason": {
+            "type": "string",
+            "maxLength": 240
+          }
+        }
+      }
+    }
+  }
+}

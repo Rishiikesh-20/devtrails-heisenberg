@@ -2,10 +2,88 @@
 
 import React, { useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { Eye, EyeOff, Shield } from "lucide-react";
+import { useToast } from "../components/ui/ToastProvider";
+import { apiPost, setUser, setOnboarding, getUser, getSignupDraft } from "../lib/api";
+import type { RegisterResponse, OnboardingPayload } from "../lib/types";
+
+type LoginResponse = RegisterResponse & {
+  full_name?: string;
+  shift_start?: string;
+  shift_end?: string;
+};
 
 export default function LoginPage() {
+  const router = useRouter();
+  const { addToast } = useToast();
   const [showPassword, setShowPassword] = useState(false);
   const [remember, setRemember] = useState(false);
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  const onSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+
+    if (!email.trim() || !password.trim()) {
+      addToast("Please enter both email and password.", "warning");
+      return;
+    }
+
+    setLoading(true);
+
+    try {
+      const normalizedEmail = email.trim().toLowerCase();
+      const res = await apiPost<LoginResponse>("/api/v1/login", {
+        email: normalizedEmail,
+        password,
+      });
+
+      setUser(res);
+
+      if (res.full_name && res.zone && res.shift_start && res.shift_end) {
+        const onboardingPayload: OnboardingPayload = {
+          email: res.email,
+          full_name: res.full_name,
+          zone: res.zone,
+          shift_start: res.shift_start,
+          shift_end: res.shift_end,
+        };
+        setOnboarding(onboardingPayload);
+      }
+
+      if (remember) {
+        localStorage.setItem("wagelock.last-email", normalizedEmail);
+      }
+
+      addToast(`Welcome back, ${res.full_name ?? "Partner"}! 👋`, "success");
+      router.push("/dashboard");
+    } catch (err) {
+      // Local-session fallback
+      const normalizedEmail = email.trim().toLowerCase();
+      const existingUser = getUser();
+      if (existingUser?.email?.trim().toLowerCase() === normalizedEmail) {
+        addToast("Welcome back!", "success");
+        router.push("/dashboard");
+        return;
+      }
+
+      const signupDraft = getSignupDraft();
+      if (signupDraft?.email?.trim().toLowerCase() === normalizedEmail) {
+        addToast("Let's finish setting up your profile.", "info");
+        router.push("/onboarding");
+        return;
+      }
+
+      addToast(
+        err instanceof Error ? err.message : "Sign in failed. Please check your details.",
+        "error",
+      );
+    } finally {
+      setLoading(false);
+    }
+  };
 
   return (
     <div className="min-h-screen flex">
@@ -15,9 +93,7 @@ export default function LoginPage() {
           {/* Logo */}
           <Link href="/" className="flex items-center gap-2.5 mb-10 w-fit">
             <div className="w-9 h-9 rounded-xl bg-electric flex items-center justify-center">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
-              </svg>
+              <Shield size={18} strokeWidth={2.5} className="text-white" />
             </div>
             <span className="font-bold text-gray-900 text-base">WageLock</span>
           </Link>
@@ -37,7 +113,6 @@ export default function LoginPage() {
               type="button"
               className="w-full flex items-center justify-center gap-3 border border-gray-200 rounded-xl px-4 py-3 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"
             >
-              {/* Google */}
               <svg width="18" height="18" viewBox="0 0 24 24">
                 <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4" />
                 <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853" />
@@ -56,12 +131,15 @@ export default function LoginPage() {
           </div>
 
           {/* Form */}
-          <form className="space-y-4">
+          <form className="space-y-4" onSubmit={onSubmit}>
             <div>
               <input
                 id="login-email"
                 type="email"
+                required
                 placeholder="Email address"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
                 className="w-full px-4 py-3 rounded-xl border border-gray-200 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-electric/30 focus:border-electric transition-all"
               />
             </div>
@@ -69,7 +147,10 @@ export default function LoginPage() {
               <input
                 id="login-password"
                 type={showPassword ? "text" : "password"}
+                required
                 placeholder="Password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
                 className="w-full px-4 py-3 rounded-xl border border-gray-200 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-electric/30 focus:border-electric transition-all pr-11"
               />
               <button
@@ -78,18 +159,7 @@ export default function LoginPage() {
                 className="absolute right-3.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
                 aria-label={showPassword ? "Hide password" : "Show password"}
               >
-                {showPassword ? (
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94" />
-                    <path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19" />
-                    <line x1="1" y1="1" x2="23" y2="23" />
-                  </svg>
-                ) : (
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
-                    <circle cx="12" cy="12" r="3" />
-                  </svg>
-                )}
+                {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
               </button>
             </div>
 
@@ -113,10 +183,16 @@ export default function LoginPage() {
             <button
               type="submit"
               id="login-submit"
-              className="w-full bg-electric hover:bg-electric-600 text-white font-semibold text-sm py-3 rounded-xl transition-colors mt-2"
+              disabled={loading}
+              className="w-full bg-electric hover:bg-electric-600 text-white font-semibold text-sm py-3 rounded-xl transition-colors mt-2 disabled:opacity-60"
             >
-              Log in
+              {loading ? "Signing in..." : "Log in"}
             </button>
+
+            <p className="text-xs text-gray-400 leading-relaxed">
+              This prototype uses onboarding-based account setup. If you have not
+              completed onboarding yet, we&apos;ll guide you there.
+            </p>
           </form>
         </div>
       </div>
@@ -127,7 +203,6 @@ export default function LoginPage() {
         <div className="absolute inset-0 grid grid-cols-4 grid-rows-5 gap-0">
           {Array.from({ length: 20 }).map((_, i) => (
             <div key={i} className="border border-white/5 relative overflow-hidden">
-              {/* Every other cell gets a quarter-circle accent */}
               {i % 3 !== 1 && (
                 <div
                   className="absolute w-full h-full rounded-tl-full"
@@ -150,9 +225,7 @@ export default function LoginPage() {
         {/* Centered brand text */}
         <div className="relative z-10 flex flex-col items-center justify-center w-full px-12 text-center gap-4">
           <div className="w-12 h-12 rounded-2xl bg-white/10 backdrop-blur flex items-center justify-center mb-2">
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
-            </svg>
+            <Shield size={24} strokeWidth={2} className="text-white" />
           </div>
           <h2 className="text-2xl font-bold text-white leading-snug">
             Income protection<br />for every shift
@@ -162,6 +235,6 @@ export default function LoginPage() {
           </p>
         </div>
       </div>
-    </div> 
+    </div>
   );
 }

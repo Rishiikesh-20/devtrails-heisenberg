@@ -1,0 +1,24 @@
+{
+  "batch_id": "9d3988c1-f5ca-4d47-90b9-0f1bc2b56964",
+  "event_id": "2f2f67c3-6f9c-40a1-89d0-2fef2ea88f1e",
+  "evaluated_at": "2026-04-04T18:11:08Z",
+  "results": [
+    {
+      "claim_id": "9fcd35f5-0cec-4207-bfa7-1f7f7df13f9f",
+      "worker_id": "f4bb2eb4-3781-4a84-b9c6-67fe71ef31ef",
+      "frs_score": 12,
+      "decision": "auto_approve",
+      "risk_flags": []
+    },
+    {
+      "claim_id": "319d0ea2-f4f6-4196-a407-0c808d21b54d",
+      "worker_id": "6c9fc6f9-6f45-47d9-a2f7-f5963a11e437",
+      "frs_score": 58,
+      "decision": "partial_hold",
+      "risk_flags": [
+        "velocity_spike",
+        "device_link_pressure"
+      ]
+    }
+  ]
+}

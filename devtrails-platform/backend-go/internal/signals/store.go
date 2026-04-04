@@ -14,6 +14,7 @@ type WeatherSignal struct {
 	PrecipitationMM  float64   `gorm:"type:numeric(8,4);not null" json:"precipitation_mm"`
 	RainMM           float64   `gorm:"type:numeric(8,4);not null" json:"rain_mm"`
 	WindSpeedKMH     float64   `gorm:"type:numeric(6,2);not null" json:"wind_speed_kmh"`
+	TemperatureC     float64   `gorm:"type:numeric(6,2);not null;default:0" json:"temperature_c"`
 	WeatherCode      int       `gorm:"not null" json:"weather_code"`
 	WeatherSummary   string    `gorm:"not null" json:"weather_summary"`
 	ThresholdCrossed bool      `gorm:"index;not null" json:"threshold_crossed"`
@@ -39,6 +40,7 @@ func SaveSignal(db *gorm.DB, r SignalReading, id string) (*WeatherSignal, error)
 		PrecipitationMM:  r.PrecipitationMM,
 		RainMM:           r.RainMM,
 		WindSpeedKMH:     r.WindSpeedKMH,
+		TemperatureC:     r.TemperatureC,
 		WeatherCode:      r.WeatherCode,
 		WeatherSummary:   r.WeatherSummary,
 		ThresholdCrossed: r.ThresholdCrossed,

@@ -13,16 +13,17 @@ from enum import Enum
 
 class EventType(str, Enum):
     HEAVY_RAIN = "heavy_rain"
+    SEVERE_WIND = "severe_wind"
     PLATFORM_OUTAGE = "platform_outage"
     CURFEW = "curfew"
-    FESTIVAL_TRAFFIC = "festival_traffic"
+    TRAFFIC_DISRUPTION = "traffic_disruption"
     FUEL_SHORTAGE = "fuel_shortage"
 
 
 class FRSDecision(str, Enum):
-    AUTO_APPROVE = "AUTO_APPROVE"
-    PARTIAL_HOLD = "PARTIAL_HOLD"
-    FULL_WITHHOLD = "FULL_WITHHOLD"
+    AUTO_APPROVE = "auto_approve"
+    PARTIAL_HOLD = "partial_hold"
+    FULL_WITHHOLD = "full_withhold"
 
 
 # ─── GPS Data ────────────────────────────────────────────────────────
@@ -100,43 +101,41 @@ class FRSResult(BaseModel):
 # ─── Batch Models (for /verify-claims) ───────────────────────────────
 
 class BatchClaimItem(BaseModel):
-    """A single claim item in a batch request from the Go backend."""
-    worker_id: str = Field(..., description="Unique worker identifier")
-    device_id: Optional[str] = None
-    upi_id: Optional[str] = None
-    event_type: EventType
-    event_timestamp: datetime
-    policy_start_time: datetime
-    is_renewal: bool = False
-    zone_id: Optional[str] = None
-    # GPS data
-    gps_history: Optional[list[GPSPing]] = None
-    # Earnings data (for Gate 3)
-    avg_earnings_14d: Optional[float] = None
-    avg_earnings_4wk: Optional[float] = None
-    zone_90th_percentile: Optional[float] = None
-    deliveries_24hr_before_event: Optional[int] = None
-    rolling_avg_deliveries_24hr: Optional[float] = None
+    claim_id: str
+    worker_id: str
+    policy_id: str
+    policy_started_at: datetime
+    is_renewal: bool
+    claimed_amount: float = Field(..., ge=0)
+    currency: str = Field(..., min_length=3, max_length=3)
+    avg_weekly_earnings: float = Field(..., ge=0)
+    recent_claims: int = Field(..., ge=0)
+    device_link_count: int = Field(..., ge=0)
+    account_link_count: int = Field(..., ge=0)
 
 
 class BatchClaimRequest(BaseModel):
-    """Batch of claims sent by the Go backend after a parametric trigger fires."""
-    claims: list[BatchClaimItem] = Field(..., min_length=1, description="List of worker claims to verify")
-    zone_claims_count: Optional[int] = Field(None, description="Total claims from this zone")
-    zone_historical_baseline: Optional[int] = Field(None, description="Historical avg claims for zone")
+    batch_id: str
+    event_id: str
+    event_type: EventType
+    zone_id: str
+    submitted_at: datetime
+    claims: list[BatchClaimItem] = Field(..., min_length=1)
 
 
 class BatchFRSResultItem(BaseModel):
-    """Simplified per-worker result for batch response (matches Go backend expected format)."""
-    user_id: str
+    claim_id: str
+    worker_id: str
     frs_score: int
     decision: str
+    risk_flags: list[str] = Field(default_factory=list)
 
 
 class BatchFRSResponse(BaseModel):
-    """Full batch response with both simplified and detailed results."""
-    results: list[BatchFRSResultItem] = Field(..., description="Simplified results for Go backend")
-    detailed_results: list[FRSResult] = Field(..., description="Full gate-by-gate breakdown")
+    batch_id: str
+    event_id: str
+    evaluated_at: datetime
+    results: list[BatchFRSResultItem]
 
 
 # ─── Group Fraud Context (for Gate 4) ───────────────────────────────
@@ -153,6 +152,6 @@ class GroupFraudWorker(BaseModel):
 
 class GroupFraudRequest(BaseModel):
     """Batch of workers to analyze for group collusion patterns."""
-    workers: list[GroupFraudWorker] = Field(..., min_length=2, description="List of workers filing claims")
+    workers: list[GroupFraudWorker] = Field(..., min_length=1, description="List of workers filing claims")
     event_type: EventType
     event_timestamp: datetime

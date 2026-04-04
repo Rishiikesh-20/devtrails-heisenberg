@@ -81,7 +81,7 @@ curl -X POST http://localhost:8080/api/v1/register \
   -d '{
     "email": "worker@test.com",
     "full_name": "John Doe",
-    "zone": "south_delhi_h3_index",
+    "zone": "south_delhi",
     "shift_start": "09:00",
     "shift_end": "17:00"
   }'
@@ -93,7 +93,7 @@ curl -X POST http://localhost:8080/api/v1/register \
 curl -X POST http://localhost:8000/calculate-tier \
   -H "Content-Type: application/json" \
   -d '{
-    "zone": "south_delhi_h3_index",
+    "zone": "south_delhi",
     "shift_start": "22:00",
     "shift_end": "04:00"
   }'

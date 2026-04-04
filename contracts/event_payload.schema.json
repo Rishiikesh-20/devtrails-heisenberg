@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://devtrails.local/contracts/event_payload.schema.json",
+  "title": "event_payload",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "event_id",
+    "event_type",
+    "zone_id",
+    "severity_factor",
+    "triggered_at",
+    "source"
+  ],
+  "properties": {
+    "event_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "event_type": {
+      "type": "string",
+      "enum": [
+        "heavy_rain",
+        "severe_wind",
+        "platform_outage",
+        "curfew",
+        "fuel_shortage",
+        "traffic_disruption"
+      ]
+    },
+    "zone_id": {
+      "type": "string",
+      "pattern": "^[a-z0-9_-]{2,64}$"
+    },
+    "severity_factor": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 2
+    },
+    "triggered_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "source": {
+      "type": "string",
+      "enum": [
+        "open_meteo",
+        "tomtom",
+        "news_oracle",
+        "platform_monitor",
+        "manual_override"
+      ]
+    }
+  }
+}

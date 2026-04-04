@@ -15,6 +15,7 @@ PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 GO_PID=""
 PY_PID=""
+FRAUD_PID=""
 USER_ID=""
 
 log_step() {
@@ -46,6 +47,12 @@ cleanup() {
 		kill -- -"${GO_PID}" 2>/dev/null || true
 		wait "${GO_PID}" 2>/dev/null || true
 		log_ok "Stopped Go process ${GO_PID}"
+	fi
+
+	if [[ -n "${FRAUD_PID}" ]]; then
+		kill -- -"${FRAUD_PID}" 2>/dev/null || true
+		wait "${FRAUD_PID}" 2>/dev/null || true
+		log_ok "Stopped Fraud Engine process ${FRAUD_PID}"
 	fi
 }
 
@@ -117,29 +124,35 @@ wait_for_kafka() {
 	log_ok "Kafka is ready"
 }
 
+ensure_kafka_topics() {
+	log_step "Ensuring Kafka topics exist"
+	docker exec --workdir /opt/kafka/bin devtrails-kafka ./kafka-topics.sh \
+		--bootstrap-server localhost:9092 \
+		--create \
+		--if-not-exists \
+		--topic disruption-events \
+		--partitions 3 \
+		--replication-factor 1 >/dev/null
+	log_ok "Kafka topics are ready"
+}
+
 prepare_demo_schema() {
 	log_step "Preparing demo PostgreSQL schema"
+	docker exec -i devtrails-postgres psql -U devtrails -d devtrails_core -v ON_ERROR_STOP=1 < "$PROJECT_ROOT/infra/init-scripts/postgres/002_add_claim_fields.sql"
+	docker exec -i devtrails-postgres psql -U devtrails -d devtrails_core -v ON_ERROR_STOP=1 < "$PROJECT_ROOT/infra/init-scripts/postgres/003_add_payment_ledger_tables.sql"
+	docker exec -i devtrails-postgres psql -U devtrails -d devtrails_core -v ON_ERROR_STOP=1 < "$PROJECT_ROOT/infra/init-scripts/postgres/004_relax_legacy_claim_constraints.sql"
+
 	docker exec -i devtrails-postgres psql -U devtrails -d devtrails_core -v ON_ERROR_STOP=1 <<'SQL'
-CREATE TABLE IF NOT EXISTS ledgers (
-    user_id VARCHAR(64) PRIMARY KEY,
-    balance NUMERIC(12,2) NOT NULL DEFAULT 0
-);
-
-ALTER TABLE claims ADD COLUMN IF NOT EXISTS event_id VARCHAR(64);
-ALTER TABLE claims ADD COLUMN IF NOT EXISTS user_id VARCHAR(64);
-ALTER TABLE claims ADD COLUMN IF NOT EXISTS frs_score INT;
-ALTER TABLE claims ADD COLUMN IF NOT EXISTS decision VARCHAR(32);
-ALTER TABLE claims ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW();
-
-ALTER TABLE claims ALTER COLUMN policy_id DROP NOT NULL;
-ALTER TABLE claims ALTER COLUMN claim_hash DROP NOT NULL;
-ALTER TABLE claims ALTER COLUMN trigger_event DROP NOT NULL;
-ALTER TABLE claims ALTER COLUMN amount_claimed DROP NOT NULL;
-ALTER TABLE claims ALTER COLUMN status TYPE VARCHAR(32) USING status::text;
-
+DELETE FROM ledger_entries WHERE event_id = 'demo_999';
+DELETE FROM payout_transactions WHERE event_id = 'demo_999';
 DELETE FROM claims WHERE event_id = 'demo_999';
 DELETE FROM ledgers;
-DELETE FROM users WHERE email = 'raju@test.com';
+DO $$
+BEGIN
+	IF to_regclass('public.users') IS NOT NULL THEN
+		DELETE FROM users WHERE email = 'raju@test.com';
+	END IF;
+END $$;
 SQL
 	log_ok "Demo schema is ready"
 }
@@ -168,6 +181,7 @@ docker compose -f infra/docker-compose.yml up -d
 wait_for_postgres
 wait_for_redis
 wait_for_kafka
+ensure_kafka_topics
 prepare_demo_schema
 
 log_step "Step 2: Boot microservices"
@@ -179,12 +193,18 @@ setsid bash -lc 'cd "$0" && exec uvicorn app.main:app --host 0.0.0.0 --port 8000
 PY_PID=$!
 log_ok "Python PID: ${PY_PID}"
 
+log_step "Starting Fraud Detection Engine"
+setsid bash -lc 'cd "$0" && exec uvicorn main:app --host 0.0.0.0 --port 8001' "$PROJECT_ROOT/../fraud-detection-engine" > "$PROJECT_ROOT/logs/fraud-engine.log" 2>&1 &
+FRAUD_PID=$!
+log_ok "Fraud Engine PID: ${FRAUD_PID}"
+
 log_step "Starting Go orchestrator"
-setsid bash -lc 'cd "$0" && exec go run server.go' "$PROJECT_ROOT/backend-go/cmd/server" > "$PROJECT_ROOT/logs/go-server.log" 2>&1 &
+setsid bash -lc 'cd "$0" && exec env AI_ENGINE_URL=http://localhost:8000 FRAUD_ENGINE_URL=http://localhost:8001 go run .' "$PROJECT_ROOT/backend-go/cmd/server" > "$PROJECT_ROOT/logs/go-server.log" 2>&1 &
 GO_PID=$!
 log_ok "Go PID: ${GO_PID}"
 
 wait_for_http "http://localhost:8000/health" "Python AI Engine health endpoint"
+wait_for_http "http://localhost:8001/health" "Fraud Engine health endpoint"
 wait_for_http "http://localhost:8080/health" "Go orchestrator health endpoint"
 
 log_step "Step 3: Seed the victim user"
@@ -192,7 +212,7 @@ REGISTER_RESPONSE="$(curl -fsS -X POST http://localhost:8080/api/v1/register \
 	-H 'Content-Type: application/json' \
 	-d '{"email":"raju@test.com","full_name":"Raju Delivery","zone":"south_delhi","shift_start":"08:00","shift_end":"18:00"}')"
 echo "$REGISTER_RESPONSE"
-	
+
 USER_ID="$(extract_user_id "$REGISTER_RESPONSE")"
 if [[ -z "$USER_ID" ]]; then
 	log_err "Failed to extract user id from register response"

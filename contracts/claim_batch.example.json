@@ -1,0 +1,35 @@
+{
+  "batch_id": "9d3988c1-f5ca-4d47-90b9-0f1bc2b56964",
+  "event_id": "2f2f67c3-6f9c-40a1-89d0-2fef2ea88f1e",
+  "event_type": "heavy_rain",
+  "zone_id": "south_delhi",
+  "submitted_at": "2026-04-04T18:11:00Z",
+  "claims": [
+    {
+      "claim_id": "9fcd35f5-0cec-4207-bfa7-1f7f7df13f9f",
+      "worker_id": "f4bb2eb4-3781-4a84-b9c6-67fe71ef31ef",
+      "policy_id": "74ed81fb-f953-49fe-b57e-0d635f95f0ba",
+      "policy_started_at": "2026-03-28T09:00:00Z",
+      "is_renewal": true,
+      "claimed_amount": 360,
+      "currency": "inr",
+      "avg_weekly_earnings": 4200,
+      "recent_claims": 1,
+      "device_link_count": 0,
+      "account_link_count": 0
+    },
+    {
+      "claim_id": "319d0ea2-f4f6-4196-a407-0c808d21b54d",
+      "worker_id": "6c9fc6f9-6f45-47d9-a2f7-f5963a11e437",
+      "policy_id": "e43b4313-0e44-4f7f-bfdf-12374f9f9d7a",
+      "policy_started_at": "2026-03-31T11:30:00Z",
+      "is_renewal": false,
+      "claimed_amount": 280,
+      "currency": "inr",
+      "avg_weekly_earnings": 3500,
+      "recent_claims": 0,
+      "device_link_count": 1,
+      "account_link_count": 0
+    }
+  ]
+}

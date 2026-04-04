@@ -2,9 +2,65 @@
 
 import React, { useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { Eye, EyeOff, Shield, CheckCircle } from "lucide-react";
+import { useToast } from "../components/ui/ToastProvider";
+import { setSignupDraft } from "../lib/api";
+import type { SignupDraft } from "../lib/types";
+
+const initialForm: SignupDraft = {
+  first_name: "",
+  last_name: "",
+  email: "",
+  phone: "",
+};
 
 export default function SignupPage() {
+  const router = useRouter();
+  const { addToast } = useToast();
   const [showPassword, setShowPassword] = useState(false);
+  const [password, setPassword] = useState("");
+  const [acceptTerms, setAcceptTerms] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [form, setForm] = useState<SignupDraft>(initialForm);
+
+  const onChange = (field: keyof SignupDraft, value: string) => {
+    setForm((prev) => ({ ...prev, [field]: value }));
+  };
+
+  const onSubmit = (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+
+    if (
+      !form.first_name.trim() ||
+      !form.last_name.trim() ||
+      !form.email.trim() ||
+      !password.trim()
+    ) {
+      addToast("Please fill out all required fields.", "warning");
+      return;
+    }
+
+    if (!acceptTerms) {
+      addToast("Please accept the Terms of Service and Privacy Policy.", "warning");
+      return;
+    }
+
+    if (password.length < 6) {
+      addToast("Password must be at least 6 characters.", "warning");
+      return;
+    }
+
+    setSubmitting(true);
+    try {
+      setSignupDraft(form);
+      addToast("Account created! Let's set up your protection.", "success");
+      router.push("/onboarding");
+    } catch {
+      addToast("Unable to continue signup right now. Please try again.", "error");
+      setSubmitting(false);
+    }
+  };
 
   return (
     <div className="min-h-screen flex">
@@ -36,9 +92,7 @@ export default function SignupPage() {
         {/* Centered brand text */}
         <div className="relative z-10 flex flex-col items-center justify-center w-full px-12 text-center gap-4">
           <div className="w-12 h-12 rounded-2xl bg-white/10 backdrop-blur flex items-center justify-center mb-2">
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
-            </svg>
+            <Shield size={24} strokeWidth={2} className="text-white" />
           </div>
           <h2 className="text-2xl font-bold text-white leading-snug">
             Join 12,500+ delivery<br />partners already protected
@@ -46,9 +100,7 @@ export default function SignupPage() {
           <div className="flex flex-col gap-2 mt-2">
             {["Instant UPI payouts", "No claim forms", "AI-verified protection"].map((f) => (
               <div key={f} className="flex items-center gap-2 text-sm text-white/60">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#14B8A6" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M20 6L9 17l-5-5" />
-                </svg>
+                <CheckCircle size={14} className="text-teal-400" />
                 {f}
               </div>
             ))}
@@ -62,9 +114,7 @@ export default function SignupPage() {
           {/* Logo */}
           <Link href="/" className="flex items-center gap-2.5 mb-10 w-fit">
             <div className="w-9 h-9 rounded-xl bg-electric flex items-center justify-center">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
-              </svg>
+              <Shield size={18} strokeWidth={2.5} className="text-white" />
             </div>
             <span className="font-bold text-gray-900 text-base">WageLock</span>
           </Link>
@@ -102,18 +152,24 @@ export default function SignupPage() {
           </div>
 
           {/* Form */}
-          <form className="space-y-4">
+          <form className="space-y-4" onSubmit={onSubmit}>
             <div className="grid grid-cols-2 gap-3">
               <input
                 id="signup-firstname"
                 type="text"
+                required
                 placeholder="First name"
+                value={form.first_name}
+                onChange={(e) => onChange("first_name", e.target.value)}
                 className="w-full px-4 py-3 rounded-xl border border-gray-200 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-electric/30 focus:border-electric transition-all"
               />
               <input
                 id="signup-lastname"
                 type="text"
+                required
                 placeholder="Last name"
+                value={form.last_name}
+                onChange={(e) => onChange("last_name", e.target.value)}
                 className="w-full px-4 py-3 rounded-xl border border-gray-200 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-electric/30 focus:border-electric transition-all"
               />
             </div>
@@ -121,7 +177,10 @@ export default function SignupPage() {
             <input
               id="signup-email"
               type="email"
+              required
               placeholder="Email address"
+              value={form.email}
+              onChange={(e) => onChange("email", e.target.value)}
               className="w-full px-4 py-3 rounded-xl border border-gray-200 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-electric/30 focus:border-electric transition-all"
             />
 
@@ -129,6 +188,8 @@ export default function SignupPage() {
               id="signup-phone"
               type="tel"
               placeholder="Phone number"
+              value={form.phone}
+              onChange={(e) => onChange("phone", e.target.value)}
               className="w-full px-4 py-3 rounded-xl border border-gray-200 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-electric/30 focus:border-electric transition-all"
             />
 
@@ -137,6 +198,9 @@ export default function SignupPage() {
                 id="signup-password"
                 type={showPassword ? "text" : "password"}
                 placeholder="Create a password"
+                required
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
                 className="w-full px-4 py-3 rounded-xl border border-gray-200 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-electric/30 focus:border-electric transition-all pr-11"
               />
               <button
@@ -145,18 +209,7 @@ export default function SignupPage() {
                 className="absolute right-3.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
                 aria-label={showPassword ? "Hide password" : "Show password"}
               >
-                {showPassword ? (
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94" />
-                    <path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19" />
-                    <line x1="1" y1="1" x2="23" y2="23" />
-                  </svg>
-                ) : (
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
-                    <circle cx="12" cy="12" r="3" />
-                  </svg>
-                )}
+                {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
               </button>
             </div>
 
@@ -165,6 +218,8 @@ export default function SignupPage() {
               <input
                 id="signup-terms"
                 type="checkbox"
+                checked={acceptTerms}
+                onChange={(e) => setAcceptTerms(e.target.checked)}
                 className="w-4 h-4 mt-0.5 rounded border-gray-300 text-electric focus:ring-electric/30 shrink-0"
               />
               <span className="text-xs text-gray-500 leading-snug">
@@ -178,9 +233,10 @@ export default function SignupPage() {
             <button
               type="submit"
               id="signup-submit"
-              className="w-full bg-electric hover:bg-electric-600 text-white font-semibold text-sm py-3 rounded-xl transition-colors mt-1"
+              disabled={submitting}
+              className="w-full bg-electric hover:bg-electric-600 text-white font-semibold text-sm py-3 rounded-xl transition-colors mt-1 disabled:opacity-60"
             >
-              Create Account
+              {submitting ? "Creating account..." : "Create Account"}
             </button>
           </form>
         </div>

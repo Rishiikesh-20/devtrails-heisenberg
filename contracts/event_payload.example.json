@@ -1,0 +1,8 @@
+{
+  "event_id": "2f2f67c3-6f9c-40a1-89d0-2fef2ea88f1e",
+  "event_type": "heavy_rain",
+  "zone_id": "south_delhi",
+  "severity_factor": 1,
+  "triggered_at": "2026-04-04T18:10:00Z",
+  "source": "open_meteo"
+}

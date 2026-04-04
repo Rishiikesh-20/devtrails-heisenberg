@@ -15,8 +15,11 @@ Run:
   Open http://localhost:8000/docs for interactive Swagger UI
 """
 
-from fastapi import FastAPI, HTTPException
+import json
+
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse, Response
 from datetime import datetime, timezone
 
 from models.schemas import (
@@ -32,9 +35,9 @@ from gates.gate3_outlier import run_gate3
 from gates.gate4_network import run_gate4_for_worker, run_gate4_batch, analyze_group_fraud
 from config import (
     AUTO_APPROVE_MAX, PARTIAL_HOLD_MAX, FRS_MAX_SCORE,
-    DECISION_AUTO_APPROVE, DECISION_PARTIAL_HOLD, DECISION_FULL_WITHHOLD,
     ZONE_ANOMALY_BONUS
 )
+from contract_validation import validate_claim_batch_payload, validate_fraud_response_payload
 
 # ─── App Setup ───────────────────────────────────────────────────────
 
@@ -64,6 +67,67 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.middleware("http")
+async def contract_validation_middleware(request: Request, call_next):
+    if request.url.path != "/verify-claims":
+        return await call_next(request)
+
+    raw_request_body = await request.body()
+    if not raw_request_body:
+        return JSONResponse(
+            status_code=422,
+            content={"error": "contract validation failed", "details": "empty request body"},
+        )
+
+    try:
+        request_payload = json.loads(raw_request_body.decode("utf-8"))
+    except json.JSONDecodeError as exc:
+        return JSONResponse(
+            status_code=422,
+            content={"error": "contract validation failed", "details": f"invalid request json: {exc}"},
+        )
+
+    try:
+        validate_claim_batch_payload(request_payload)
+    except ValueError as exc:
+        return JSONResponse(
+            status_code=422,
+            content={"error": "contract validation failed", "details": str(exc)},
+        )
+
+    request._body = raw_request_body
+    response = await call_next(request)
+
+    raw_response_body = b""
+    async for chunk in response.body_iterator:
+        raw_response_body += chunk
+
+    if response.status_code < 400 and raw_response_body:
+        try:
+            response_payload = json.loads(raw_response_body.decode("utf-8"))
+        except json.JSONDecodeError as exc:
+            return JSONResponse(
+                status_code=500,
+                content={"error": "contract validation failed", "details": f"invalid response json: {exc}"},
+            )
+
+        try:
+            validate_fraud_response_payload(response_payload)
+        except ValueError as exc:
+            return JSONResponse(
+                status_code=500,
+                content={"error": "contract validation failed", "details": str(exc)},
+            )
+
+    return Response(
+        content=raw_response_body,
+        status_code=response.status_code,
+        headers=dict(response.headers),
+        media_type=response.media_type,
+        background=response.background,
+    )
 
 
 # ─── Helper: FRS Decision ───────────────────────────────────────────
@@ -374,80 +438,56 @@ async def reset_claims():
         "**The main endpoint called by the Go backend.**\n\n"
         "Receives a batch of worker claims after a parametric trigger fires.\n"
         "Runs all 4 fraud gates on each claim and returns:\n"
-        "- `results`: Simplified format `[{user_id, frs_score, decision}]` for the Go backend\n"
-        "- `detailed_results`: Full gate-by-gate breakdown for audit logging\n\n"
+        "- `results`: Simplified format `[{claim_id, worker_id, frs_score, decision}]` for the Go backend\n\n"
         "**Flow:** Go Trigger Controller → POST /verify-claims → FRS Engine → Response back to Go"
     )
 )
 async def verify_claims_batch(batch: BatchClaimRequest):
-    """Process a batch of claims from the Go backend through all fraud gates."""
     simplified_results: list[BatchFRSResultItem] = []
-    detailed_results: list[FRSResult] = []
 
-    # ── Build Gate 4 batch context ──
-    # Convert all claims to GroupFraudWorker format for group fraud analysis
     batch_workers = []
     for item in batch.claims:
-        last_gps = None
-        if item.gps_history and len(item.gps_history) > 0:
-            last_gps = item.gps_history[-1]  # Use most recent GPS ping
-
         batch_workers.append(GroupFraudWorker(
             worker_id=item.worker_id,
-            device_id=item.device_id,
-            upi_id=item.upi_id,
-            latitude=last_gps.latitude if last_gps else None,
-            longitude=last_gps.longitude if last_gps else None,
-            claim_timestamp=item.event_timestamp,
+            claim_timestamp=batch.submitted_at,
         ))
 
-    # Run Gate 4 batch analysis once (shared across all workers)
     group_fraud_request = GroupFraudRequest(
         workers=batch_workers,
-        event_type=batch.claims[0].event_type,
-        event_timestamp=batch.claims[0].event_timestamp,
+        event_type=batch.event_type,
+        event_timestamp=batch.submitted_at,
     )
     gate4_results_by_worker = run_gate4_batch(group_fraud_request)
 
-    # ── Process each claim through Gates 1-3, then append Gate 4 ──
     for item in batch.claims:
         claim = ClaimRequest(
             worker=WorkerData(
                 worker_id=item.worker_id,
-                device_id=item.device_id,
-                upi_id=item.upi_id,
-                avg_earnings_14d=item.avg_earnings_14d,
-                avg_earnings_4wk=item.avg_earnings_4wk,
-                zone_90th_percentile=item.zone_90th_percentile,
-                deliveries_24hr_before_event=item.deliveries_24hr_before_event,
-                rolling_avg_deliveries_24hr=item.rolling_avg_deliveries_24hr,
-                gps_history=item.gps_history,
+                avg_earnings_14d=item.avg_weekly_earnings,
+                avg_earnings_4wk=item.avg_weekly_earnings,
+                zone_90th_percentile=item.avg_weekly_earnings,
+                deliveries_24hr_before_event=item.recent_claims,
+                rolling_avg_deliveries_24hr=float(item.recent_claims),
             ),
             policy=PolicyData(
-                policy_start_time=item.policy_start_time,
+                policy_start_time=item.policy_started_at,
                 is_renewal=item.is_renewal,
             ),
-            event_type=item.event_type,
-            event_timestamp=item.event_timestamp,
-            zone_id=item.zone_id,
-            zone_claims_count=batch.zone_claims_count,
-            zone_historical_baseline=batch.zone_historical_baseline,
+            event_type=batch.event_type,
+            event_timestamp=batch.submitted_at,
+            zone_id=batch.zone_id,
         )
 
-        # Run Gates 1-3 via the full pipeline
         frs_result = await full_frs_pipeline(claim)
 
-        # Replace the "Gate 4 skipped" placeholder with real Gate 4 results
         gate_results_without_g4_placeholder = [
             r for r in frs_result.gate_results
             if not (r.gate_id == 4 and "skipped" in r.details.lower())
         ]
 
-        # Add real Gate 4 results from batch analysis
         worker_g4_results = gate4_results_by_worker.get(item.worker_id, [])
         gate_results_without_g4_placeholder.extend(worker_g4_results)
 
-        # Recalculate total FRS with Gate 4 included
         total_frs = sum(r.frs_points for r in gate_results_without_g4_placeholder)
         total_frs = min(total_frs, FRS_MAX_SCORE)
         decision, description = get_frs_decision(total_frs)
@@ -462,15 +502,21 @@ async def verify_claims_batch(batch: BatchClaimRequest):
             timestamp=datetime.now(timezone.utc),
         )
 
-        detailed_results.append(updated_result)
+        risk_flags = [
+            f"gate_{result.gate_id}" for result in gate_results_without_g4_placeholder if result.frs_points > 0
+        ]
+
         simplified_results.append(BatchFRSResultItem(
-            user_id=item.worker_id,
+            claim_id=item.claim_id,
+            worker_id=item.worker_id,
             frs_score=total_frs,
             decision=decision.value,
+            risk_flags=risk_flags,
         ))
 
     return BatchFRSResponse(
+        batch_id=batch.batch_id,
+        event_id=batch.event_id,
+        evaluated_at=datetime.now(timezone.utc),
         results=simplified_results,
-        detailed_results=detailed_results,
     )
-
