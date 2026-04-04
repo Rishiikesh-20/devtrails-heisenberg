@@ -12,10 +12,12 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
 
+	"github.com/devtrails/backend-go/internal/signals"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/joho/godotenv"
@@ -33,6 +35,11 @@ type ServerConfig struct {
 	KafkaTopicDisruption string
 	KafkaGroupID         string
 	AIEngineURL          string
+	OpenMeteoBaseURL     string
+	PollingLatitude      float64
+	PollingLongitude     float64
+	PollingZone          string
+	PollIntervalMin      int
 }
 
 type App struct {
@@ -134,6 +141,19 @@ func main() {
 func run() error {
 	_ = godotenv.Load()
 
+	pollingLat, _ := strconv.ParseFloat(env("POLLING_LATITUDE", "28.6139"), 64)
+	if pollingLat == 0 {
+		pollingLat = 28.6139
+	}
+	pollingLon, _ := strconv.ParseFloat(env("POLLING_LONGITUDE", "77.2090"), 64)
+	if pollingLon == 0 {
+		pollingLon = 77.2090
+	}
+	pollIntMin, _ := strconv.Atoi(env("POLL_INTERVAL_MINUTES", "10"))
+	if pollIntMin == 0 {
+		pollIntMin = 10
+	}
+
 	cfg := ServerConfig{
 		Port:                 env("PORT", "8080"),
 		DatabaseURL:          env("DATABASE_URL", "postgres://devtrails:devtrails_secret@localhost:55432/devtrails_core?sslmode=disable"),
@@ -142,14 +162,19 @@ func run() error {
 		KafkaTopicDisruption: env("KAFKA_TOPIC_DISRUPTION", "disruption-events"),
 		KafkaGroupID:         env("KAFKA_GROUP_ID", "core-api-frs-consumer"),
 		AIEngineURL:          env("AI_ENGINE_URL", "http://localhost:8000"),
+		OpenMeteoBaseURL:     env("OPEN_METEO_BASE_URL", "https://api.open-meteo.com/v1/forecast"),
+		PollingLatitude:      pollingLat,
+		PollingLongitude:     pollingLon,
+		PollingZone:          env("POLLING_ZONE", "south_delhi_h3_index"),
+		PollIntervalMin:      pollIntMin,
 	}
 
 	db, err := gorm.Open(postgres.Open(cfg.DatabaseURL), &gorm.Config{})
 	if err != nil {
 		return fmt.Errorf("postgres connect: %w", err)
 	}
-	if err := db.AutoMigrate(&User{}); err != nil {
-		return fmt.Errorf("automigrate user: %w", err)
+	if err := db.AutoMigrate(&User{}, &signals.WeatherSignal{}); err != nil {
+		return fmt.Errorf("automigrate: %w", err)
 	}
 
 	rdb := redis.NewClient(&redis.Options{Addr: cfg.RedisAddr, DB: 0})
@@ -170,6 +195,7 @@ func run() error {
 	defer cancel()
 
 	go app.consumeDisruptionEvents(ctx)
+	go app.runWeatherPoller(ctx)
 
 	router := gin.Default()
 	router.Use(corsMiddleware())
@@ -181,6 +207,7 @@ func run() error {
 	})
 	router.POST("/api/register", app.registerUser)
 	router.GET("/api/admin/metrics", app.getAdminMetrics)
+	router.GET("/api/signals", app.listSignals)
 
 	srv := &http.Server{
 		Addr:              ":" + cfg.Port,
@@ -632,4 +659,86 @@ func env(key, fallback string) string {
 		return v
 	}
 	return fallback
+}
+
+func (a *App) runWeatherPoller(ctx context.Context) {
+	log.Printf("[poller] Starting weather poller interval=%dm zone=%s", a.cfg.PollIntervalMin, a.cfg.PollingZone)
+	ticker := time.NewTicker(time.Duration(a.cfg.PollIntervalMin) * time.Minute)
+	defer ticker.Stop()
+
+	a.pollAndStoreWeather(ctx)
+	for {
+		select {
+		case <-ctx.Done():
+			log.Printf("[poller] Stopping weather poller")
+			return
+		case <-ticker.C:
+			a.pollAndStoreWeather(ctx)
+		}
+	}
+}
+
+func (a *App) pollAndStoreWeather(ctx context.Context) {
+	fetchCfg := signals.FetchConfig{
+		BaseURL:     a.cfg.OpenMeteoBaseURL,
+		Latitude:    a.cfg.PollingLatitude,
+		Longitude:   a.cfg.PollingLongitude,
+		PollingZone: a.cfg.PollingZone,
+	}
+
+	reading, err := signals.FetchWeatherSignal(ctx, a.httpClient, fetchCfg)
+	if err != nil {
+		log.Printf("[poller] fetch failed: %v", err)
+		return
+	}
+
+	newID := uuid.NewString()
+	_, err = signals.SaveSignal(a.db.WithContext(ctx), reading, newID)
+	if err != nil {
+		log.Printf("[poller] save failed: %v", err)
+		return
+	}
+
+	log.Printf("[poller] fetched weather zone=%s precipitation=%.2fmm threshold_crossed=%v",
+		reading.Zone, reading.PrecipitationMM, reading.ThresholdCrossed)
+
+	if reading.ThresholdCrossed {
+		// Just log for now. Let the Kafka group handle publish if necessary.
+		log.Printf("TRIGGER: %s zone=%s precipitation=%.2fmm wind=%.2fkmh",
+			reading.EventType, reading.Zone, reading.PrecipitationMM, reading.WindSpeedKMH)
+	}
+}
+
+func (a *App) listSignals(c *gin.Context) {
+	limitStr := c.Query("limit")
+	limit, _ := strconv.Atoi(limitStr)
+	if limit == 0 {
+		limit = 50
+	}
+
+	filters := signals.SignalQueryFilters{
+		Limit: limit,
+	}
+
+	if zone := c.Query("zone"); zone != "" {
+		filters.Zone = &zone
+	}
+	if eventType := c.Query("event_type"); eventType != "" {
+		filters.EventType = &eventType
+	}
+	if trigger := c.Query("triggered"); trigger != "" {
+		b, _ := strconv.ParseBool(trigger)
+		filters.ThresholdCrossed = &b
+	}
+
+	res, err := signals.QuerySignals(a.db.WithContext(c.Request.Context()), filters)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to query signals", "details": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"data":  res,
+		"count": len(res),
+	})
 }
