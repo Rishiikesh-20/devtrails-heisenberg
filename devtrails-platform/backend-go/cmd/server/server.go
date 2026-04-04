@@ -211,7 +211,6 @@ func run() error {
 	router.GET("/api/v1/reports", app.listReports)
 	router.GET("/api/v1/admin/metrics", app.getAdminMetrics)
 	router.GET("/api/v1/weather", app.listWeather)
-	// i aded a new line to checklets see
 	srv := &http.Server{
 		Addr:              ":" + cfg.Port,
 		Handler:           router,
@@ -313,10 +312,21 @@ func (a *App) getAdminMetrics(c *gin.Context) {
 		return
 	}
 
-	if err := a.db.Raw("SELECT COUNT(*) FROM claims WHERE status = 'approved';").Scan(&metrics.TotalApprovedClaims).Error; err != nil {
-		log.Printf("admin metrics query failed total_approved_claims err=%v", err)
+	var hasClaims bool
+	if err := a.db.Raw("SELECT to_regclass('public.claims') IS NOT NULL;").Scan(&hasClaims).Error; err != nil {
+		log.Printf("admin metrics query failed claims table check err=%v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load admin metrics"})
 		return
+	}
+
+	if hasClaims {
+		if err := a.db.Raw("SELECT COUNT(*) FROM claims WHERE status = 'approved';").Scan(&metrics.TotalApprovedClaims).Error; err != nil {
+			log.Printf("admin metrics query failed total_approved_claims err=%v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load admin metrics"})
+			return
+		}
+	} else {
+		metrics.TotalApprovedClaims = 0
 	}
 
 	var hasLedgers bool

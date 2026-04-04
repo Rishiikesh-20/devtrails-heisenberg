@@ -7,6 +7,7 @@ A microservices-based parametric insurance platform for gig-workers, featuring r
 The system is built using a polyglot microservices architecture. It contains the following modules:
 
 ### 1. Infrastructure (`/infra`)
+
 - Orchestrated via `docker-compose.yml`.
 - **Kafka** (KRaft mode, NO Zookeeper): Event bus for system triggers (`disruption-events`).
 - **PostgreSQL 15**: Core relational state (Users, Policies, Claims).
@@ -14,14 +15,16 @@ The system is built using a polyglot microservices architecture. It contains the
 - **ClickHouse**: High-performance time-series database for raw weather/traffic telemetry.
 
 ### 2. Core API (`/backend-go`)
+
 - **Tech Stack**: Go 1.22, Gin, GORM, `segmentio/kafka-go`, `redis/go-redis`.
-- **Responsibilities**: 
-  - Exposes REST endpoints (e.g., `/api/register`).
+- **Responsibilities**:
+  - Exposes REST endpoints (e.g., `/api/v1/register`).
   - Manages Postgres database models (Users, Workers).
   - Consumes from the Kafka `disruption-events` topic.
   - Automatically identifies in-zone users during weather disruptions and triggers the Python Fraud & Risk System (FRS).
 
 ### 3. AI FRS & Risk Engine (`/ai-engine-python`)
+
 - **Tech Stack**: Python 3.12, FastAPI, Uvicorn, Pandas, Scikit-Learn, XGBoost, Redis.
 - **Responsibilities**:
   - `POST /calculate-tier`: Dynamically scores worker risk based on zone and shift timing to assign a premium tier.
@@ -32,12 +35,14 @@ The system is built using a polyglot microservices architecture. It contains the
     - **Gate 4**: Network cluster pressure.
 
 ### 4. Oracle Service (`/oracle-service`)
+
 - **Tech Stack**: Python 3.12, `schedule`, `kafka-python`.
 - **Responsibilities**:
   - Standalone cron service polling every 10 minutes.
   - Mocks data from OpenWeatherMap. If rainfall exceeds 15mm, it immediately publishes a `heavy_rain` disruption event to Kafka.
 
 ### 5. Frontend PWA (`/frontend-pwa`)
+
 - **Tech Stack**: Next.js 15 (App Router), React 18, Tailwind CSS, Zustand.
 - **Responsibilities**:
   - Displays the Worker "Wallet Dashboard" (showing balance, premium, zone, and tier).
@@ -57,4 +62,5 @@ The system is built using a polyglot microservices architecture. It contains the
 🚧 **Environment Polish**: Finalize intra-docker networking hostnames (e.g., pointing Go to `http://ai-engine-python:8000`).
 
 ## 🛠 Commands
+
 Please refer to [cmds.md](./cmds.md) for instructions on initializing, running, and testing the platform.
