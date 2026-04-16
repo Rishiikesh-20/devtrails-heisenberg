@@ -31,13 +31,7 @@ function buildTimeline(cycleStart: string, waitingPeriodEndsAt?: string): Timeli
     const dateIso = date.toISOString();
     const key = toDayKey(date);
     const waiting = Boolean(waitingEndKey && key <= waitingEndKey);
-
-    return {
-      dateIso,
-      current: key === todayKey,
-      covered: key <= todayKey,
-      waiting,
-    };
+    return { dateIso, current: key === todayKey, covered: key <= todayKey, waiting };
   });
 }
 
@@ -45,12 +39,12 @@ export function WeeklyCycleTimeline({ cycleStart, status, waitingPeriodEndsAt }:
   const days = buildTimeline(cycleStart, waitingPeriodEndsAt);
 
   return (
-    <section className="glass-card rounded-2xl p-6">
+    <section className="premium-card p-6">
       <header className="mb-4">
-        <p className="text-[11px] uppercase tracking-[0.2em] text-electric font-semibold mb-2">
+        <p className="text-[11px] uppercase tracking-[0.2em] text-electric font-semibold mb-1">
           Weekly Coverage Cycle
         </p>
-        <h3 className="text-lg font-semibold">Current 7-day protection window</h3>
+        <h3 className="text-lg font-bold text-gray-900">Current 7-day protection window</h3>
       </header>
 
       <div className="overflow-x-auto pb-1">
@@ -58,32 +52,37 @@ export function WeeklyCycleTimeline({ cycleStart, status, waitingPeriodEndsAt }:
           {days.map((day, index) => {
             const dayStatus = status === "expired"
               ? "Expired"
-              : day.waiting
-                ? "Waiting"
-                : day.covered
-                  ? "Covered"
-                  : "Upcoming";
+              : day.waiting ? "Waiting"
+              : day.covered ? "Covered"
+              : "Upcoming";
 
             return (
               <article
                 key={day.dateIso}
                 className={`relative rounded-xl border p-3 transition-colors ${
                   day.current
-                    ? "border-electric/60 bg-electric/15"
+                    ? "border-electric/40 bg-electric/8"
                     : day.covered
-                      ? "border-teal-400/20 bg-teal-500/10"
-                      : "border-white/[0.08] bg-white/[0.03]"
+                      ? "border-teal-200 bg-teal-50"
+                      : "border-gray-100 bg-gray-50"
                 }`}
               >
                 {index < 6 && (
-                  <span className="pointer-events-none absolute top-6 -right-2.5 text-white/20">
+                  <span className="pointer-events-none absolute top-6 -right-2.5 text-gray-300">
                     <Dot size={20} />
                   </span>
                 )}
-                <p className="text-[10px] uppercase tracking-wider text-white/45">{formatDayLabel(day.dateIso)}</p>
-                <p className="text-sm font-semibold mt-1">{formatDayAndMonth(day.dateIso)}</p>
-                <p className="text-xs mt-2 flex items-center gap-1.5 text-white/70">
-                  {dayStatus === "Covered" && <CheckCircle2 size={12} className="text-teal-300" />}
+                <p className="text-[10px] uppercase tracking-wider text-gray-500 font-semibold">
+                  {formatDayLabel(day.dateIso)}
+                </p>
+                <p className="text-sm font-bold text-gray-900 mt-1">{formatDayAndMonth(day.dateIso)}</p>
+                <p className={`text-xs mt-2 flex items-center gap-1.5 font-medium ${
+                  dayStatus === "Covered" ? "text-teal-600"
+                    : dayStatus === "Waiting" ? "text-amber-600"
+                    : dayStatus === "Expired" ? "text-red-500"
+                    : "text-gray-400"
+                }`}>
+                  {dayStatus === "Covered" && <CheckCircle2 size={12} className="text-teal-500" />}
                   {dayStatus}
                 </p>
               </article>

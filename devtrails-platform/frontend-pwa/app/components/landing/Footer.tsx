@@ -1,17 +1,34 @@
 import React from "react";
 
+import Link from "next/link";
+
 const columns = [
   {
     heading: "Solutions",
-    links: ["Income Protection", "Disruption Coverage", "Payout Dashboard", "Risk Monitor"],
+    links: [
+      { label: "Income Protection", href: "/dashboard" },
+      { label: "Disruption Coverage", href: "/dashboard" },
+      { label: "Payout Dashboard", href: "/payouts" },
+      { label: "Risk Monitor", href: "/signals-map" },
+    ],
+  },
+  {
+    heading: "Platform",
+    links: [
+      { label: "My Policy", href: "/policy" },
+      { label: "Pricing Plans", href: "/pricing" },
+      { label: "Signal Engine", href: "/triggers" },
+      { label: "Weather Oracle", href: "/weather" }
+    ],
   },
   {
     heading: "Company",
-    links: ["About Us", "How It Works", "Blog", "Careers"],
-  },
-  {
-    heading: "More",
-    links: ["Privacy Policy", "Terms of Service", "Support", "Contact"],
+    links: [
+      { label: "Privacy Policy", href: "#" },
+      { label: "Terms of Service", href: "#" },
+      { label: "Support", href: "#" },
+      { label: "Contact", href: "#" },
+    ],
   },
 ];
 
@@ -88,10 +105,10 @@ export function Footer() {
               <p className="text-white/50 text-xs font-semibold uppercase tracking-widest mb-5">{col.heading}</p>
               <ul className="space-y-3">
                 {col.links.map((link) => (
-                  <li key={link}>
-                    <a href="#" className="text-white/35 text-sm hover:text-white/70 transition-colors">
-                      {link}
-                    </a>
+                  <li key={link.label}>
+                    <Link href={link.href} className="text-white/35 text-sm hover:text-white/70 transition-colors">
+                      {link.label}
+                    </Link>
                   </li>
                 ))}
               </ul>

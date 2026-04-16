@@ -18,18 +18,18 @@ export const SignalSourceTabs = ({ activeSource, onSourceChange }: SignalSourceT
   ];
 
   return (
-    <div className="flex items-center gap-2 overflow-x-auto pb-2 scrollbar-none border-b border-white/10 mb-6">
+    <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none border-b border-gray-200 mb-4">
       {tabs.map(({ type, label, icon: Icon }) => (
         <button
           key={type}
           onClick={() => onSourceChange(type)}
-          className={`flex items-center gap-2 px-4 py-2.5 rounded-t-lg transition-all whitespace-nowrap font-medium text-sm
-            ${activeSource === type
-              ? 'bg-white/10 text-white border-b-2 border-indigo-500'
-              : 'text-gray-400 hover:text-gray-200 hover:bg-white/5 border-b-2 border-transparent'
-            }`}
+          className={`flex items-center gap-2 px-4 py-2.5 rounded-t-lg transition-all whitespace-nowrap font-semibold text-sm border-b-2 -mb-px ${
+            activeSource === type
+              ? 'text-electric border-electric bg-electric/5'
+              : 'text-gray-500 border-transparent hover:text-gray-800 hover:bg-gray-50'
+          }`}
         >
-          <Icon className={`w-4 h-4 ${activeSource === type ? 'text-indigo-400' : 'text-gray-500'}`} />
+          <Icon className={`w-4 h-4 ${activeSource === type ? 'text-electric' : 'text-gray-400'}`} />
           {label}
         </button>
       ))}

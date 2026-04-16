@@ -4,8 +4,6 @@
 
 **A weekly, automated micro-insurance product that pays gig workers within 10 minutes when external disruptions kill their earnings — no paperwork, no claims, no delays.**
 
-<br />
-<img src="Arch.png" alt="DevTrails System Architecture" width="100%" />
 <br /><br />
 
 [![Next.js](https://img.shields.io/badge/Frontend-Next.js-black?logo=next.js)](https://nextjs.org/)
