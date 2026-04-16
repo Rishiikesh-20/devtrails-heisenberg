@@ -46,7 +46,6 @@ Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
 From repo root:
 
 ```powershell
-cd C:\ADHIKKESH\SEM6\Guidewire\devtrails-heisenberg
 Copy-Item .env.example .env -Force
 ```
 
@@ -94,7 +93,6 @@ This starts:
 From repo root:
 
 ```powershell
-cd C:\ADHIKKESH\SEM6\Guidewire\devtrails-heisenberg
 docker compose up -d --build
 docker compose ps
 ```
@@ -126,7 +124,7 @@ Use this when team members run services independently.
 ### Terminal 1: Infra only (Postgres/Redis/Kafka/ClickHouse)
 
 ```powershell
-cd C:\ADHIKKESH\SEM6\Guidewire\devtrails-heisenberg\devtrails-platform
+cd devtrails-platform
 docker compose -f infra/docker-compose.yml up -d
 docker ps
 ```
@@ -140,7 +138,7 @@ docker exec --workdir /opt/kafka/bin devtrails-kafka ./kafka-topics.sh --bootstr
 ### Terminal 2: AI Engine (Python FastAPI)
 
 ```powershell
-cd C:\ADHIKKESH\SEM6\Guidewire\devtrails-heisenberg\devtrails-platform\ai-engine-python
+cd devtrails-platform\ai-engine-python
 py -3.12 -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install --upgrade pip
@@ -156,7 +154,7 @@ uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 ### Terminal 3: Fraud Detection Engine (Python FastAPI)
 
 ```powershell
-cd C:\ADHIKKESH\SEM6\Guidewire\devtrails-heisenberg\fraud-detection-engine
+cd fraud-detection-engine
 py -3.12 -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install --upgrade pip
@@ -171,7 +169,7 @@ uvicorn main:app --host 0.0.0.0 --port 8001 --reload
 ### Terminal 4: Backend Go API
 
 ```powershell
-cd C:\ADHIKKESH\SEM6\Guidewire\devtrails-heisenberg\devtrails-platform\backend-go
+cd devtrails-platform\backend-go
 go mod tidy
 
 $env:PORT="8080"
@@ -203,7 +201,7 @@ go run ./cmd/server
 ### Terminal 5: Oracle Service
 
 ```powershell
-cd C:\ADHIKKESH\SEM6\Guidewire\devtrails-heisenberg\devtrails-platform\oracle-service
+cd devtrails-platform\oracle-service
 py -3.12 -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install --upgrade pip
@@ -219,7 +217,7 @@ python src/main.py
 ### Terminal 6: Frontend PWA
 
 ```powershell
-cd C:\ADHIKKESH\SEM6\Guidewire\devtrails-heisenberg\devtrails-platform\frontend-pwa
+cd devtrails-platform\frontend-pwa
 npm install
 $env:NEXT_PUBLIC_BACKEND_URL="http://localhost:8080"
 npm run dev
@@ -232,7 +230,7 @@ App URL:
 Stop infra-only stack:
 
 ```powershell
-cd C:\ADHIKKESH\SEM6\Guidewire\devtrails-heisenberg\devtrails-platform
+cd devtrails-platform
 docker compose -f infra/docker-compose.yml down
 ```
 
@@ -541,7 +539,7 @@ docker compose up -d --build
 Reset infra-only stack:
 
 ```powershell
-cd C:\ADHIKKESH\SEM6\Guidewire\devtrails-heisenberg\devtrails-platform
+cd devtrails-platform
 docker compose -f infra/docker-compose.yml down
 docker compose -f infra/docker-compose.yml up -d
 ```
