@@ -1,5 +1,5 @@
 import React from 'react';
-import { ShieldAlert, Navigation } from 'lucide-react';
+import { ShieldAlert } from 'lucide-react';
 
 export const ZoneImpactLegend = () => {
   return (

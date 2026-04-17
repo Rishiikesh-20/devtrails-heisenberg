@@ -7,7 +7,6 @@ import {
   LayoutDashboard,
   FileText,
   CloudSun,
-  BadgeCheck,
   User,
   Shield,
   LogOut,
@@ -34,7 +33,10 @@ const SECONDARY_NAV = [
   { href: "/signals-map", label: "Signals Map", icon: MapPin },
 ];
 
-const ALL_NAV = [...PRIMARY_NAV, { href: "/profile", label: "Profile", icon: User }];
+const ADMIN_NAV = [
+  { href: "/admin", label: "Admin", icon: ShieldAlert },
+];
+
 const MOBILE_NAV = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/payouts", label: "Payouts", icon: Wallet },
@@ -52,23 +54,24 @@ export function PageShell({ children }: { children: ReactNode }) {
   const userName = onboarding?.full_name ?? "Delivery Partner";
   const userZone = user?.zone ?? onboarding?.zone ?? "—";
   const userTier = user?.tier ?? 0;
+  const secondaryNav = user?.role === "admin" ? [...SECONDARY_NAV, ...ADMIN_NAV] : SECONDARY_NAV;
 
   const handleLogout = () => {
     clearSession();
     window.location.href = "/";
   };
 
-  const isSecondaryActive = SECONDARY_NAV.some((item) => item.href === pathname);
+  const isSecondaryActive = secondaryNav.some((item) => item.href === pathname);
 
   return (
     <div className="min-h-screen bg-[#F8FAFC] text-gray-900 flex flex-col relative">
 
       {/* ── Top Header */}
-      <header className="sticky top-0 z-40 bg-white border-b border-gray-200 shadow-sm relative">
+      <header className="sticky top-0 z-40 bg-white border-b border-gray-200 shadow-sm">
         {/* ── Thin Premium Gradient Accent Bar ── */}
-        <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-electric via-[#3B82F6] to-[#14B8A6]" />
-        
-        <div className="max-w-7xl mx-auto px-5 flex items-center justify-between h-[64px] pt-1">
+        <div className="absolute top-0 left-0 right-0 h-1 bg-linear-to-r from-electric via-[#3B82F6] to-[#14B8A6]" />
+
+        <div className="max-w-7xl mx-auto px-5 flex items-center justify-between h-16 pt-1">
           {/* Logo */}
           <Link href="/dashboard" className="flex items-center gap-2.5 group shrink-0">
             <div className="w-8 h-8 rounded-lg bg-electric flex items-center justify-center transition-transform group-hover:scale-105">
@@ -118,7 +121,7 @@ export function PageShell({ children }: { children: ReactNode }) {
 
               {moreOpen && (
                 <div className="absolute top-full mt-1 right-0 w-44 bg-white border border-gray-200 rounded-xl shadow-lg py-1 z-50">
-                  {SECONDARY_NAV.map((item) => {
+                  {secondaryNav.map((item) => {
                     const Icon = item.icon;
                     const isActive = pathname === item.href;
                     return (
@@ -185,7 +188,7 @@ export function PageShell({ children }: { children: ReactNode }) {
         {mobileOpen && (
           <div className="md:hidden border-t border-gray-100 bg-white">
             <div className="px-4 py-3 space-y-1">
-              {[...PRIMARY_NAV, ...SECONDARY_NAV, { href: "/profile", label: "Profile", icon: User }].map((item) => {
+              {[...PRIMARY_NAV, ...secondaryNav, { href: "/profile", label: "Profile", icon: User }].map((item) => {
                 const Icon = item.icon;
                 const isActive = pathname === item.href;
                 return (

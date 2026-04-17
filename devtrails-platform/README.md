@@ -27,21 +27,23 @@ The system is built using a polyglot microservices architecture. It contains the
 
 - **Tech Stack**: Python 3.12, FastAPI, Uvicorn, Pandas, Scikit-Learn, XGBoost, Redis.
 - **Responsibilities**:
-  - `POST /calculate-tier`: Dynamically scores worker risk based on zone and shift timing to assign a premium tier.
-  - `POST /evaluate-frs`: Evaluates incoming claims through a dummy 4-Gate rule pipeline:
-    - **Gate 1**: Redis hash check (deduplication).
-    - **Gate 2**: Velocity check.
-    - **Gate 3**: Earnings outlier.
-    - **Gate 4**: Network cluster pressure.
+  - `POST /calculate-tier`: Dynamically scores worker risk based on zone and shift timing to assign premium tier.
 
-### 4. Oracle Service (`/oracle-service`)
+### 4. Fraud Detection Engine (`/fraud-detection-engine`)
+
+- **Tech Stack**: Python 3.12, FastAPI, Pydantic.
+- **Responsibilities**:
+  - `POST /verify-claims`: Batch fraud evaluation pipeline (Gate 1 through Gate 4).
+  - Returns FRS decisions (`auto_approve`, `partial_hold`, `full_withhold`) used by backend payout routing.
+
+### 5. Oracle Service (`/oracle-service`)
 
 - **Tech Stack**: Python 3.12, `schedule`, `kafka-python`.
 - **Responsibilities**:
   - Standalone cron service polling every 10 minutes.
-  - Mocks data from OpenWeatherMap. If rainfall exceeds 15mm, it immediately publishes a `heavy_rain` disruption event to Kafka.
+  - Polls Open-Meteo and supporting signal providers, then emits normalized disruption payloads to Kafka.
 
-### 5. Frontend PWA (`/frontend-pwa`)
+### 6. Frontend PWA (`/frontend-pwa`)
 
 - **Tech Stack**: Next.js 15 (App Router), React 18, Tailwind CSS, Zustand.
 - **Responsibilities**:

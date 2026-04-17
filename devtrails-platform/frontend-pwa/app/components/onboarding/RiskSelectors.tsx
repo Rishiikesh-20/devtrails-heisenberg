@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Package, ShoppingBag, Truck, Clock, ShieldAlert } from 'lucide-react';
+import { Package, ShoppingBag, Truck, ShieldAlert } from 'lucide-react';
 
 export const RiskSelectors = () => {
   const [segment, setSegment] = useState('food');

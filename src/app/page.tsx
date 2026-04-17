@@ -78,7 +78,7 @@ const PERSONAS = [
     scenario:
       "Encounters sudden monsoon flooding (Rain > 15mm/hr). Earnings stop.",
     payout: "₹360",
-    trigger: "Weather API — OpenWeatherMap",
+		trigger: "Weather Oracle — Open-Meteo",
     triggerIcon: CloudRain,
   },
   {
@@ -108,14 +108,14 @@ const PERSONAS = [
 const TRIGGERS = [
   {
     name: "Extreme Weather",
-    source: "OpenWeatherMap API",
+		source: "Open-Meteo API",
     condition: "> 15mm/hr rainfall",
     oracle: "Weather Oracle",
     icon: CloudRain,
   },
   {
     name: "Platform Outage",
-    source: "Downdetector API",
+		source: "Swiggy City Health Probe",
     condition: "70% drop in active orders",
     oracle: "Uptime Oracle",
     icon: ServerOff,
@@ -129,14 +129,14 @@ const TRIGGERS = [
   },
   {
     name: "Sudden Curfews",
-    source: "X (Twitter) Police API & NewsAPI",
+		source: "GDELT + snscrape consensus",
     condition: "Section 144 declared",
     oracle: "Social Oracle",
     icon: ShieldAlert,
   },
   {
     name: "Severe Traffic / Blockades",
-    source: "TomTom Traffic API",
+		source: "OSRM + OpenRouteService",
     condition: "< 5 km/h avg speed",
     oracle: "Mobility Oracle",
     icon: TrafficCone,
@@ -189,7 +189,7 @@ export default function Home() {
             Learn More
             <ArrowDown size={14} strokeWidth={1.5} className="text-zinc-700 group-hover:translate-y-0.5 transition-transform" />
           </a>
-          
+
           <Link
             href="/demo"
             className="inline-flex items-center justify-center gap-2.5 px-8 py-4 rounded-xl border border-white/[0.12] bg-white/[0.04] hover:bg-white/[0.08] text-sm font-semibold text-zinc-300 hover:text-white transition-all duration-300 backdrop-blur-sm group min-w-[200px]"

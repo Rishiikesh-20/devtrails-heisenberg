@@ -78,7 +78,7 @@ DevTrails is a **weekly parametric income protection product** — not a traditi
 **Scenario — Heavy Monsoon Flooding:**
 It's 6:30 PM on a Tuesday. The IMD issues a red alert — rainfall exceeds 25mm/hr across South Delhi. Zomato auto-pauses order assignments. Raju is logged into his shift but receives zero orders for the next 3 hours.
 
-- DevTrails' weather oracle detects rainfall > 15mm/hr via the OpenWeatherMap API.
+- DevTrails' weather oracle detects rainfall > 15mm/hr via Open-Meteo polling.
 - The system verifies Raju's GPS confirms he is inside the affected zone and was on an active shift.
 - Within 10 minutes of trigger confirmation, **₹360 hits Raju's UPI** (3 lost hours × ₹150/hr avg × 1.00 severity × 0.80 co-pay).
 - Raju never files a claim. He never even opens the app. The money just arrives.
@@ -92,8 +92,8 @@ It's 6:30 PM on a Tuesday. The IMD issues a red alert — rainfall exceeds 25mm/
 **Scenario — Sudden Curfew (Section 144):**
 At 7:00 PM on a Friday, the Bengaluru Police Commissioner tweets about the imposition of Section 144 across Koramangala due to an unplanned protest. Meena's entire 4-hour peak shift is wiped out.
 
-- DevTrails' NLP listener on X (Twitter) detects the official handle `@BlrCityPolice` posting keywords matching "Section 144".
-- NewsAPI confirms the restriction via 3+ independent local sources.
+- DevTrails' signal pipeline combines GDELT news hits and snscrape social evidence for "Section 144" keywords.
+- Curfew trigger requires multi-source confirmation before payout routing.
 - Meena's GPS and shift log confirm she was active in the restricted zone.
 - **Payout: ₹392** (4 hours × ₹87.5/hr × 1.20 severity × 0.80 co-pay). Deposited via UPI within 10 minutes.
 
@@ -106,7 +106,7 @@ At 7:00 PM on a Friday, the Bengaluru Police Commissioner tweets about the impos
 **Scenario — Commercial LPG Shortage:**
 A sudden shortage of commercial LPG cylinders forces 15+ cloud kitchens in Arjun's zone to shut down between 12 PM and 4 PM. No restaurants, no pickups, no orders.
 
-- DevTrails' News Oracle polls NewsAPI and GDELT. NLP extraction finds 3+ independent sources confirming `"LPG shortage" + "restaurants closed" + "Hyderabad"`.
+- DevTrails' News Oracle polls GDELT plus social corroboration, then enriches location context via Nominatim lookups.
 - The parametric trigger fires. Arjun's GPS confirms zone presence during the disruption.
 - **Payout: ₹208** (4 hours × ₹100/hr × 0.65 severity × 0.80 co-pay).
 
@@ -208,7 +208,7 @@ Every trigger is **100% deterministic and auditable** — no subjective judgment
 | **Trigger Condition** | Rainfall > 15mm/hr OR active flood alert by IMD for the delivery zone |
 | **Minimum Duration** | 60 minutes |
 | **Severity Factor** | 1.00 |
-| **Data Sources** | **OpenWeatherMap API** (`rain.1h` endpoint), **Tomorrow.io API** (hyper-local weather alerts & zone polygons) |
+| **Data Sources** | **Open-Meteo API** (hourly precipitation + wind), backend zone poller coordinates |
 
 ### 2. Food Delivery Platform Outage
 
@@ -217,7 +217,7 @@ Every trigger is **100% deterministic and auditable** — no subjective judgment
 | **Trigger Condition** | Orders in the rider's zone fall > 70% below the rolling baseline for the time window |
 | **Minimum Duration** | 30 minutes |
 | **Severity Factor** | 1.00 |
-| **Data Sources** | **Platform API Mock** (simulated Swiggy/Zomato internal order drops), **DownDetector Scraper** (BeautifulSoup - live user report spikes) |
+| **Data Sources** | **Platform API Mock** (simulated Swiggy/Zomato order drops), **Swiggy city endpoint health checks** |
 
 ### 3. Curfew or Law Enforcement Restrictions
 
@@ -226,7 +226,7 @@ Every trigger is **100% deterministic and auditable** — no subjective judgment
 | **Trigger Condition** | Unplanned movement restrictions (e.g., Section 144) imposed by city authorities |
 | **Minimum Duration** | Any duration |
 | **Severity Factor** | 1.20 |
-| **Data Sources** | **X (Twitter) API** (stream listener on verified handles like `@CPDelhi`, `@BlrCityPolice` + NLP keyword triggers), **NewsAPI** (local city constraint & government advisory keywords) |
+| **Data Sources** | **GDELT v2 Docs API** (news signal), **snscrape** (social corroboration) |
 
 ### 4. Festival Traffic Congestion / Road Closures
 
@@ -235,7 +235,7 @@ Every trigger is **100% deterministic and auditable** — no subjective judgment
 | **Trigger Condition** | Primary delivery routes blocked OR average speed drops to < 5 km/hr on major roads |
 | **Minimum Duration** | 60 minutes |
 | **Severity Factor** | 0.50 |
-| **Data Sources** | **TomTom Traffic API** (current vs. free-flow travel time), **Google Maps Routes API** (`duration_in_traffic` vs. standard duration) |
+| **Data Sources** | **OSRM public routing API**, **OpenRouteService directions API** |
 
 ### 5. Commercial LPG Shortage (Restaurant Closures)
 
@@ -244,7 +244,7 @@ Every trigger is **100% deterministic and auditable** — no subjective judgment
 | **Trigger Condition** | Mass shutdown of cloud kitchens due to commercial LPG unavailability |
 | **Minimum Duration** | 60 minutes |
 | **Severity Factor** | 0.65 |
-| **Data Sources** | **Unstructured Data Oracle** (NewsAPI / GDELT continuous polling), **NLP Consensus Extraction** — fires when 3+ independent local sources confirm closures within a set window |
+| **Data Sources** | **GDELT + social consensus signals**, **Nominatim geocoding enrichment** |
 
 ---
 
@@ -427,16 +427,16 @@ Because our platform guarantees payouts in 10 minutes, fraud detection must be i
 
 | Source | Data |
 | :--- | :--- |
-| **AccuWeather API & IMD Feed** | Precipitation > 15mm/hr |
-| **Google Routes API** | Speed < 5 km/h detection |
+| **Open-Meteo API** | Precipitation and wind threshold polling |
+| **OSRM + OpenRouteService** | Route delay and speed-drop detection |
 | **GDELT News Monitor** | Section 144 / Bandh / curfew detection |
-| **Downdetector Enterprise API** | 70% drop in assigned orders |
+| **Swiggy City Endpoint Probes** | Platform availability/down proxy signal |
 
 ### 7. Third-Party Integrations
 
 | Service | Purpose |
 | :--- | :--- |
-| **Razorpay (Test Mode) / Stripe Sandbox** | Instant UPI payouts |
+| **Stripe PaymentIntents (test/sandbox)** | Automated payout rail with wallet-credit fallback in local simulation |
 | **Reinsurance Mock** | Simulated Aggregate Stop-Loss Smart Contract via Webhooks |
 
 ---
@@ -516,14 +516,14 @@ With gig riders depending entirely on smooth workflows, any disruption means dev
 
 We broke the monolithic bottleneck constraint by successfully deploying five dedicated microservices communicating via **Kafka** and **REST**:
 
-1. **The Core Orchestrator (Go Backend):** High-speed, low-overhead transaction and state manager. It subscribes to Kafka topics globally, tracking localized disruption events, and immediately filters which users are actively shifting inside affected polygonal zones. 
+1. **The Core Orchestrator (Go Backend):** High-speed, low-overhead transaction and state manager. It subscribes to Kafka topics globally, tracking localized disruption events, and immediately filters which users are actively shifting inside affected polygonal zones.
 2. **The Intelligence Layer (Python FRS & AI Engine):** Instead of making our Go backend choke on heavy machine learning routines, we developed an isolated FastAPI Python microservice (`fraud-detection-engine`) and `ai-engine-python`. It instantly digests arrays of user metrics and generates risk assignments and immediate Fraud Risk Scores (0-100).
-3. **The Sensorial Oracle (Cron Service):** A python script running silently alongside the ecosystem, pulling local weather telemetry and screaming over the Kafka Bus when limits are breached (e.g. >15mm rain/hour). 
+3. **The Sensorial Oracle (Cron Service):** A python script running silently alongside the ecosystem, pulling local weather telemetry and screaming over the Kafka Bus when limits are breached (e.g. >15mm rain/hour).
 4. **Data Backbone (Postgres & Redis):** PostgreSQL stores ACID-compliant persistent wallets and policies. Redis guards Gate 1 of our Fraud pipeline with instantaneous `SETNX` constraints rejecting duplicated claims hashed dynamically via `worker_id` + `event`.
 5. **Interactive Edge (Next.js Application):** A blazingly fast Next.js 15 PWA providing an accessible entry portal and mock dashboard simulation controls so we can trigger these pipeline tests with real confidence in the frontend.
 
 ### 🛡️ The 4-Gate Fraud Engine is ALIVE
-Our most prized achievement is the completed FRS Engine implementation. Because parametric insurance moves money within 10 minutes, manual auditing is dead. We solved this with an aggressive multi-gate API filtering claims. 
+Our most prized achievement is the completed FRS Engine implementation. Because parametric insurance moves money within 10 minutes, manual auditing is dead. We solved this with an aggressive multi-gate API filtering claims.
 - A worker faking GPS speed > 90km/h is snared by **Gate 2 (The Speed Camera)**.
 - If 14-day earnings suddenly spike 3x above a monthly baseline leading into a storm, they hit a wall at **Gate 3 (The Outlier Detector)**.
 - A cluster of 5 workers claiming a disruption from the exact same Device ID instantly sets off the massive graph correlation algorithm at **Gate 4 (The Network Mapper)**.
@@ -583,7 +583,7 @@ For the full architecture-aligned specification, algorithms, and real-world API 
 
 - **[Insurance Model & Product Flow](./docs/insurancemodel.md)**: Full architecture-aligned specification, covering payout formula, tier features, and scope guardrails.
 - **[AI & ML Integration Plan](./docs/aiml.md)**: Detailed breakdown of the XGBoost risk engine, Fraud Risk Score (FRS) multi-gate pipeline, and the ML vs. Rules engineering boundary.
-- **[Parametric Triggers & Oracles](./docs/triggers.md)**: Specifications for the exact conditions, severity factors, and external APIs (OpenWeatherMap, Google Routes, GDELT, Downdetector) powering the 5 disruption events.
+- **[Parametric Triggers & Oracles](./docs/triggers.md)**: Specifications for exact conditions, severity factors, and current production/demo providers (Open-Meteo, OSRM/OpenRouteService, GDELT, snscrape, Swiggy probes).
 
 
 ---

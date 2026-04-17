@@ -6,13 +6,13 @@ import Link from "next/link";
 import { ArrowLeft, MapPin, Clock, Zap, Shield, CheckCircle } from "lucide-react";
 import { useToast } from "../components/ui/ToastProvider";
 import { apiPost, getSignupDraft, setUser, setOnboarding } from "../lib/api";
-import { ZONES } from "../lib/constants";
+import { DEFAULT_ZONE, getZoneByValue, nearestZoneFromCoordinates } from "../lib/constants";
 import type { OnboardingPayload, RegisterResponse } from "../lib/types";
 
 const initialState: OnboardingPayload = {
   email: "",
   full_name: "",
-  zone: "south_delhi",
+	zone: DEFAULT_ZONE,
   shift_start: "09:00",
   shift_end: "17:00",
 };
@@ -23,11 +23,27 @@ const TRUST_POINTS = [
   "No claim filing — payouts are fully automatic",
 ];
 
+function displayZone(zone: string): string {
+  const normalized = zone.trim().toLowerCase();
+  if (!normalized) {
+    return "";
+  }
+
+  const known = getZoneByValue(normalized);
+  if (known.value === normalized) {
+    return known.label;
+  }
+
+  return normalized.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
 export default function OnboardingPage() {
   const router = useRouter();
   const { addToast } = useToast();
   const [form, setForm] = useState<OnboardingPayload>(initialState);
   const [loading, setLoading] = useState(false);
+  const [detectingLocation, setDetectingLocation] = useState(false);
+  const [locationError, setLocationError] = useState<string | null>(null);
 
   useEffect(() => {
     const draft = getSignupDraft();
@@ -40,12 +56,47 @@ export default function OnboardingPage() {
     }));
   }, []);
 
+  const detectLocation = React.useCallback(() => {
+    if (typeof navigator === "undefined" || !navigator.geolocation) {
+      setLocationError("Geolocation is not available on this device. Enter your zone manually.");
+      return;
+    }
+
+    setDetectingLocation(true);
+    setLocationError(null);
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        const nearest = nearestZoneFromCoordinates(
+          position.coords.latitude,
+          position.coords.longitude,
+        );
+        setForm((prev) => ({ ...prev, zone: nearest.value }));
+        setDetectingLocation(false);
+      },
+      (error) => {
+        setDetectingLocation(false);
+        setLocationError(`Unable to detect location (${error.message}). Enter your zone manually.`);
+      },
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 300000 },
+    );
+  }, []);
+
+  useEffect(() => {
+    detectLocation();
+  }, [detectLocation]);
+
   const onChange = (field: keyof OnboardingPayload, value: string) => {
     setForm((prev) => ({ ...prev, [field]: value }));
   };
 
   const onSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+
+    if (!form.zone.trim()) {
+      addToast("Delivery zone is required before continuing.", "warning");
+      return;
+    }
+
     setLoading(true);
     try {
       const res = await apiPost<RegisterResponse>("/api/v1/register", form);
@@ -142,7 +193,7 @@ export default function OnboardingPage() {
           <div className="mb-7">
             <h1 className="text-2xl font-bold text-gray-900 tracking-tight">Protect My Income</h1>
             <p className="text-sm text-gray-500 mt-1.5">
-              Set your shift and zone. Our AI does the rest.
+				Use your live location and shift details. Our AI handles the rest.
             </p>
           </div>
 
@@ -179,28 +230,46 @@ export default function OnboardingPage() {
               </div>
 
               <div>
-                <label htmlFor="ob-zone" className="block text-sm font-semibold text-gray-700 mb-1.5 flex items-center gap-1.5">
+                <label htmlFor="ob-zone" className="text-sm font-semibold text-gray-700 mb-1.5 flex items-center gap-1.5">
                   <MapPin size={14} className="text-electric" />
-                  Delivery Zone
+                  Delivery Zone (GPS)
                 </label>
-                <select
-                  id="ob-zone"
-                  required
-                  value={form.zone}
-                  onChange={(e) => onChange("zone", e.target.value)}
-                  className="w-full px-4 py-3 rounded-xl border border-gray-200 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-electric/30 focus:border-electric bg-white transition-all"
+                <div className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50">
+                  <p className="text-sm font-semibold text-gray-900">
+					{form.zone ? displayZone(form.zone) : "Detecting your area..."}
+                  </p>
+                  <p className="text-xs text-gray-500 mt-1">
+                    Premium and signals are scoped to this detected location.
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={detectLocation}
+                  disabled={detectingLocation}
+                  className="mt-2 inline-flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50 transition-colors disabled:opacity-60"
                 >
-                  {ZONES.map((z) => (
-                    <option key={z.value} value={z.value}>
-                      {z.label}
-                    </option>
-                  ))}
-                </select>
+                  <MapPin size={12} className="text-electric" />
+                  {detectingLocation ? "Detecting current location..." : "Use Current Location"}
+                </button>
+
+                <label htmlFor="ob-zone" className="block text-xs font-semibold text-gray-500 mt-3 mb-1.5">
+                  If GPS is unavailable, enter your city or zone
+                </label>
+                <input
+                  id="ob-zone"
+                  type="text"
+                  value={form.zone}
+                  onChange={(e) => onChange("zone", e.target.value.trim().toLowerCase().replace(/\s+/g, "_"))}
+                  className="w-full px-4 py-3 rounded-xl border border-gray-200 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-electric/30 focus:border-electric transition-all placeholder-gray-400"
+                  placeholder="coimbatore"
+                />
+                {locationError && <p className="text-xs text-amber-700 mt-2">{locationError}</p>}
               </div>
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label htmlFor="ob-shift-start" className="block text-sm font-semibold text-gray-700 mb-1.5 flex items-center gap-1.5">
+                  <label htmlFor="ob-shift-start" className="text-sm font-semibold text-gray-700 mb-1.5 flex items-center gap-1.5">
                     <Clock size={14} className="text-electric" />
                     Shift Start
                   </label>
@@ -214,7 +283,7 @@ export default function OnboardingPage() {
                   />
                 </div>
                 <div>
-                  <label htmlFor="ob-shift-end" className="block text-sm font-semibold text-gray-700 mb-1.5 flex items-center gap-1.5">
+                  <label htmlFor="ob-shift-end" className="text-sm font-semibold text-gray-700 mb-1.5 flex items-center gap-1.5">
                     <Clock size={14} className="text-electric" />
                     Shift End
                   </label>

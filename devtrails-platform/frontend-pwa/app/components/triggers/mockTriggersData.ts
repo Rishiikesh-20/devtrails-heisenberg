@@ -14,7 +14,7 @@ export const initialTriggerEvents: TriggerEvent[] = [
     timestamp: new Date(Date.now() - 1000 * 60 * 5).toISOString(),
     source: 'Weather',
     title: 'Severe Flash Flood Warning',
-    location: 'Miami, FL',
+    location: 'South Delhi',
     severity: 'Critical',
     status: 'Processed',
     evidence: {
@@ -29,7 +29,7 @@ export const initialTriggerEvents: TriggerEvent[] = [
     timestamp: new Date(Date.now() - 1000 * 60 * 15).toISOString(),
     source: 'Social',
     title: 'High Spike: Riot Mentions',
-    location: 'Paris, France',
+    location: 'Koramangala, Bengaluru',
     severity: 'High',
     status: 'Pending',
     evidence: {
@@ -44,7 +44,7 @@ export const initialTriggerEvents: TriggerEvent[] = [
     timestamp: new Date(Date.now() - 1000 * 60 * 45).toISOString(),
     source: 'Traffic',
     title: 'Highway 101 Complete Gridlock',
-    location: 'Los Angeles, CA',
+    location: 'Andheri, Mumbai',
     severity: 'Medium',
     status: 'Ignored',
     evidence: {
@@ -59,7 +59,7 @@ export const initialTriggerEvents: TriggerEvent[] = [
 export const generateMockEvent = (): TriggerEvent => {
   const sources: ('Weather' | 'Social' | 'Traffic' | 'Routing' | 'Places')[] = ['Weather', 'Social', 'Traffic', 'Routing', 'Places'];
   const severities: ('Low' | 'Medium' | 'High' | 'Critical')[] = ['Low', 'Medium', 'High', 'Critical'];
-  const locations = ['London, UK', 'Tokyo, JP', 'New York, NY', 'Austin, TX', 'Sydney, JP', 'Berlin, DE'];
+  const locations = ['South Delhi', 'HSR Layout, Bengaluru', 'Andheri, Mumbai', 'HITEC City, Hyderabad', 'T Nagar, Chennai', 'Coimbatore'];
 
   const source = sources[Math.floor(Math.random() * sources.length)];
   return {

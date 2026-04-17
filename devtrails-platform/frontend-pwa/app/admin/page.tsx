@@ -1,10 +1,34 @@
 'use client';
 import React from 'react';
+import { useRouter } from 'next/navigation';
 import { ShieldCheck } from 'lucide-react';
 import { MetricsCards, ClaimHeatmap, FraudTrendChart, RiskForecastPanel, ReinsuranceStatusWidget } from '../components/admin/AdminWidgets';
 import { PageShell } from '../components/ui/PageShell';
+import { getUser } from '../lib/api';
 
 export default function AdminDashboardPage() {
+  const router = useRouter();
+  const [authorized, setAuthorized] = React.useState(false);
+
+  React.useEffect(() => {
+    const user = getUser();
+    if (!user) {
+      router.replace('/login');
+      return;
+    }
+
+    if (user.role !== 'admin') {
+      router.replace('/dashboard');
+      return;
+    }
+
+    setAuthorized(true);
+  }, [router]);
+
+  if (!authorized) {
+    return null;
+  }
+
   return (
     <PageShell>
       <div className="max-w-7xl mx-auto px-5 py-8 pb-24 md:pb-8 space-y-8">

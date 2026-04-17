@@ -1,8 +1,8 @@
 # Weekly Parametric Income Protection for Food Delivery Partners
 
-> **Document type:** Pilot Product Model & Technical Insurance Specification  
-> **Status:** Phase 1 Deliverable — Finalized  
-> **Cross-references:** [README.md](../README.md) · [System Architecture](../Arch.png) · [Insurance Model DOCX](./originals/InsuranceModal.docx)  
+> **Document type:** Pilot Product Model & Technical Insurance Specification
+> **Status:** Phase 1 Deliverable — Finalized
+> **Cross-references:** [README.md](../README.md) · [System Architecture](../Arch.png) · [Insurance Model DOCX](./originals/InsuranceModal.docx)
 > **Scope:** Income-loss cover only. Weekly pricing. Automated trigger and payout flow. No health, life, accident, or vehicle coverage.
 
 ---
@@ -359,9 +359,9 @@ This section maps the written insurance model to the architecture diagram in thi
 ### 16.1 External oracle layer
 
 Signal inputs:
-- Environmental: AccuWeather + IMD feed
-- Civic/mobility: Google Places + GDELT signals
-- Platform reliability: Downdetector enterprise signal
+- Environmental: Open-Meteo + zone weather pollers
+- Civic/mobility: GDELT + snscrape + OSRM/OpenRouteService signals
+- Platform reliability: city endpoint uptime probes + order-drop mock baseline
 
 Processing:
 - Oracle outputs are normalized by the Go polling layer
@@ -458,4 +458,3 @@ Recommended implementation guardrail:
 | [InsuranceModal.docx](./originals/InsuranceModal.docx) | Original formal insurance model document (source DOCX) |
 | [AIModal.docx](./originals/AIModal.docx) | Original AI/ML specification document (source DOCX) |
 | [trigger.docx](./originals/trigger.docx) | Original triggers specification document (source DOCX) |
-

@@ -24,6 +24,7 @@ export default function PricingPage() {
   const router = useRouter();
   const { addToast } = useToast();
   const [data, setData] = useState<RegisterResponse | null>(null);
+  const [selectedTier, setSelectedTier] = useState<1 | 2 | 3>(3);
   const [accepted, setAccepted] = useState(false);
   const [activating, setActivating] = useState(false);
 
@@ -33,6 +34,9 @@ export default function PricingPage() {
       router.replace("/onboarding");
       return;
     }
+
+    const initialTier = user.tier as 1 | 2 | 3;
+    setSelectedTier(initialTier || 3);
     setData(user);
   }, [router]);
 
@@ -46,10 +50,12 @@ export default function PricingPage() {
       const res = await apiPost<PolicyActionResponse>("/api/v1/policy/activate", {
         user_id: data.id,
         auto_renew_enabled: true,
+        target_tier: selectedTier,
       });
 
       setAccepted(true);
       setData(res.user);
+      setSelectedTier((res.user.tier as 1 | 2 | 3) || selectedTier);
       setUser(res.user);
       addToast(res.message || "Protection activated! Your wallet is now live.", "success");
       setTimeout(() => router.push("/dashboard"), 700);
@@ -73,10 +79,14 @@ export default function PricingPage() {
   }
 
   const pricing = data.pricing_breakdown;
-  const tier = data.tier as 1 | 2 | 3;
+  const recommendedTier = data.tier as 1 | 2 | 3;
+  const tier = selectedTier ?? recommendedTier;
   const tierInfo = TIER_INFO[tier] ?? TIER_INFO[3];
   const coverageIcons = COVERAGE_ICONS[tier] ?? COVERAGE_ICONS[3];
-  const coverageLabels = COVERAGE_LABELS[tier] ?? COVERAGE_LABELS[3];
+  const coverageLabels = tierInfo.eventsCovered ?? COVERAGE_LABELS[tier] ?? COVERAGE_LABELS[3];
+  const basePrice = pricing?.base_price ?? 250;
+  const finalPremium = tierInfo.weeklyPremium;
+  const aiRiskDiscount = finalPremium - basePrice;
 
   return (
     <main className="min-h-screen bg-[#F8FAFC] py-12 px-5">
@@ -128,6 +138,44 @@ export default function PricingPage() {
             <p className="text-sm font-semibold text-teal-700">AI Risk Analysis Complete</p>
           </div>
 
+          {/* Tier chooser */}
+          <div className="space-y-3">
+            <p className="text-xs font-bold text-gray-600 uppercase tracking-wider">Choose your tier plan</p>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              {[1, 2, 3].map((tierValue) => {
+                const planTier = tierValue as 1 | 2 | 3;
+                const plan = TIER_INFO[planTier];
+                const isSelected = tier === planTier;
+                const isRecommended = recommendedTier === planTier;
+
+                return (
+                  <button
+                    key={tierValue}
+                    type="button"
+                    onClick={() => setSelectedTier(planTier)}
+                    disabled={accepted || activating}
+                    className={`text-left rounded-xl border p-4 transition-all ${
+                      isSelected
+                        ? "border-electric bg-electric/5"
+                        : "border-gray-200 bg-white hover:border-gray-300"
+                    } ${accepted ? "cursor-default" : ""}`}
+                  >
+                    <p className="text-xs font-bold uppercase tracking-wider text-gray-500">Tier {tierValue}</p>
+                    <p className="text-sm font-bold text-gray-900 mt-1">{plan.name}</p>
+                    <p className="text-xs text-gray-500 mt-1">{plan.tagline}</p>
+                    <p className="text-lg font-extrabold text-gray-900 mt-3">₹{plan.weeklyPremium}/week</p>
+                    <p className="text-xs text-gray-500 mt-1">Max {plan.maxPayout}</p>
+                    {isRecommended && (
+                      <span className="inline-flex mt-3 text-[10px] font-bold uppercase tracking-wider text-teal-700 bg-teal-50 border border-teal-100 px-2 py-1 rounded-md">
+                        AI Recommended
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
           {/* Tier badge */}
           <div className="flex items-center gap-3">
             <span
@@ -149,19 +197,19 @@ export default function PricingPage() {
           <div className="rounded-xl bg-gray-50 border border-gray-100 p-5 space-y-3">
             <div className="flex items-center justify-between">
               <span className="text-sm font-medium text-gray-600">Base Price</span>
-              <span className="text-sm text-gray-400 line-through">₹{pricing.base_price.toFixed(2)}</span>
+				<span className="text-sm text-gray-400 line-through">₹{basePrice.toFixed(2)}</span>
             </div>
             <div className="flex items-center justify-between">
               <span className="text-sm font-medium text-gray-600">AI Risk Discount</span>
               <span className="text-sm font-bold text-teal-600">
-                {pricing.ai_risk_discount <= 0 ? "−" : "+"}₹{Math.abs(pricing.ai_risk_discount).toFixed(2)}
+					{aiRiskDiscount <= 0 ? "−" : "+"}₹{Math.abs(aiRiskDiscount).toFixed(2)}
               </span>
             </div>
             <div className="h-px bg-gray-200" />
             <div className="flex items-center justify-between">
               <span className="text-sm font-bold text-gray-800">Final Premium</span>
               <div className="text-right">
-                <span className="text-3xl font-extrabold text-gray-900 count-up">₹{pricing.final_premium.toFixed(2)}</span>
+					<span className="text-3xl font-extrabold text-gray-900 count-up">₹{finalPremium.toFixed(2)}</span>
                 <p className="text-xs text-gray-400 mt-0.5">per week</p>
               </div>
             </div>
@@ -223,7 +271,7 @@ export default function PricingPage() {
             ) : activating ? (
               "Activating protection..."
             ) : (
-              "Accept & Activate Protection →"
+              `Accept Tier ${tier} & Activate Protection →`
             )}
           </button>
         </div>

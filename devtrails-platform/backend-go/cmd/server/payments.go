@@ -19,17 +19,22 @@ import (
 )
 
 const (
-	defaultWagePerHour         = 150.0
-	maxShiftHoursPerEvent      = 8.0
-	maxStripeErrorBodyBytes    = 8 * 1024
-	payoutStatusPending        = "pending"
-	payoutStatusProcessing     = "processing"
-	payoutStatusSucceeded      = "succeeded"
-	payoutStatusFailed         = "failed"
-	payoutStatusCredited       = "credited"
-	ledgerEntryTypeCredit      = "credit"
-	ledgerEntrySourceStripe    = "stripe"
-	defaultPayoutCurrencyLower = "inr"
+	defaultWagePerHour           = 150.0
+	maxShiftHoursPerEvent        = 8.0
+	defaultLostHoursPerEvent     = 4.0
+	coPayMultiplier              = 0.80
+	minimumInstantTransferAmount = 20.0
+	maxStripeErrorBodyBytes      = 8 * 1024
+	payoutStatusPending          = "pending"
+	payoutStatusProcessing       = "processing"
+	payoutStatusSucceeded        = "succeeded"
+	payoutStatusFailed           = "failed"
+	payoutStatusCredited         = "credited"
+	ledgerEntryTypeCredit        = "credit"
+	ledgerEntrySourceStripe      = "stripe"
+	ledgerEntrySourceSimulation  = "simulated_rail"
+	stripeStatusSimulated        = "simulated"
+	defaultPayoutCurrencyLower   = "inr"
 )
 
 type Event struct {
@@ -37,6 +42,7 @@ type Event struct {
 	Type           string
 	SeverityFactor float64
 	Timestamp      int64
+	LostHours      float64
 }
 
 type Ledger struct {
@@ -105,17 +111,135 @@ func CalculatePayout(user User, event Event) (float64, error) {
 		return 0, fmt.Errorf("severity_factor must be non-negative: %.2f", event.SeverityFactor)
 	}
 
-	hours := event.SeverityFactor * maxShiftHoursPerEvent
-	if hours < 0 {
-		return 0, errors.New("computed hours cannot be negative")
+	lostHours := event.LostHours
+	if lostHours <= 0 {
+		lostHours = estimateLostHoursForShift(user.ShiftStart, user.ShiftEnd)
+	}
+	if lostHours < 0 {
+		return 0, errors.New("lost_hours cannot be negative")
 	}
 
-	payout := user.WagePerHour * hours
-	if payout < 0 {
-		return 0, errors.New("computed payout cannot be negative")
+	grossPayout := lostHours * user.WagePerHour * event.SeverityFactor
+	if grossPayout < 0 {
+		return 0, errors.New("computed gross payout cannot be negative")
 	}
 
-	return roundCurrency(payout), nil
+	return roundCurrency(grossPayout), nil
+}
+
+func estimateLostHoursForShift(shiftStart string, shiftEnd string) float64 {
+	start, startErr := time.Parse("15:04", strings.TrimSpace(shiftStart))
+	end, endErr := time.Parse("15:04", strings.TrimSpace(shiftEnd))
+	if startErr != nil || endErr != nil {
+		return defaultLostHoursPerEvent
+	}
+
+	duration := end.Sub(start)
+	if duration <= 0 {
+		duration += 24 * time.Hour
+	}
+
+	hours := duration.Hours()
+	if hours <= 0 {
+		return defaultLostHoursPerEvent
+	}
+	if hours > maxShiftHoursPerEvent {
+		hours = maxShiftHoursPerEvent
+	}
+
+	return roundCurrency(hours)
+}
+
+func dailyCapForTier(tier int) float64 {
+	switch tier {
+	case 1:
+		return 420
+	case 2:
+		return 700
+	default:
+		return 1000
+	}
+}
+
+func resolvePolicyCycleWindow(user User, eventAt time.Time) (time.Time, time.Time) {
+	if user.PolicyCycleStartAt != nil && user.PolicyCycleEndAt != nil {
+		return user.PolicyCycleStartAt.UTC(), user.PolicyCycleEndAt.UTC()
+	}
+
+	cycleEnd := eventAt.UTC()
+	cycleStart := cycleEnd.Add(-weeklyPolicyCycleDuration)
+	return cycleStart, cycleEnd
+}
+
+func (a *App) sumCommittedPayouts(ctx context.Context, userID string, from time.Time, to time.Time) (float64, error) {
+	hasPayouts, err := a.tableExists(ctx, "public.payout_transactions")
+	if err != nil {
+		return 0, err
+	}
+	if !hasPayouts {
+		return 0, nil
+	}
+
+	used := 0.0
+	if err := a.db.WithContext(ctx).Raw(
+		`SELECT COALESCE(SUM(amount), 0)
+		 FROM payout_transactions
+		 WHERE user_id = ?
+		   AND LOWER(status::text) IN ('pending', 'processing', 'succeeded', 'credited')
+		   AND created_at >= ?
+		   AND created_at < ?`,
+		userID,
+		from.UTC(),
+		to.UTC(),
+	).Scan(&used).Error; err != nil {
+		return 0, err
+	}
+
+	return roundCurrency(used), nil
+}
+
+func (a *App) applyPayoutRules(ctx context.Context, user User, grossAmount float64, eventTimestamp int64) (float64, error) {
+	if grossAmount <= 0 {
+		return 0, nil
+	}
+
+	eventAt := time.Now().UTC()
+	if eventTimestamp > 0 {
+		eventAt = time.Unix(eventTimestamp, 0).UTC()
+	}
+
+	coPayAdjusted := roundCurrency(grossAmount * coPayMultiplier)
+	weeklyCap := maxCoverageForTier(user.RiskTier)
+	dailyCap := dailyCapForTier(user.RiskTier)
+
+	cycleStart, cycleEnd := resolvePolicyCycleWindow(user, eventAt)
+	usedWeekly, err := a.sumCommittedPayouts(ctx, user.ID, cycleStart, cycleEnd)
+	if err != nil {
+		return 0, fmt.Errorf("compute weekly usage: %w", err)
+	}
+	remainingWeekly := weeklyCap - usedWeekly
+	if remainingWeekly < 0 {
+		remainingWeekly = 0
+	}
+
+	dayStart := time.Date(eventAt.Year(), eventAt.Month(), eventAt.Day(), 0, 0, 0, 0, time.UTC)
+	dayEnd := dayStart.Add(24 * time.Hour)
+	usedDaily, err := a.sumCommittedPayouts(ctx, user.ID, dayStart, dayEnd)
+	if err != nil {
+		return 0, fmt.Errorf("compute daily usage: %w", err)
+	}
+	remainingDaily := dailyCap - usedDaily
+	if remainingDaily < 0 {
+		remainingDaily = 0
+	}
+
+	finalPayout := math.Min(coPayAdjusted, remainingDaily)
+	finalPayout = math.Min(finalPayout, remainingWeekly)
+	if finalPayout < 0 {
+		finalPayout = 0
+	}
+
+	return roundCurrency(finalPayout), nil
 }
 
 func roundCurrency(v float64) float64 {
@@ -135,7 +259,15 @@ func (a *App) ProcessPayout(ctx context.Context, user User, event Event, decisio
 		return 0, errors.New("missing event id for payout")
 	}
 
-	amount, err := CalculatePayout(user, event)
+	grossAmount, err := CalculatePayout(user, event)
+	if err != nil {
+		return 0, err
+	}
+	if grossAmount <= 0 {
+		return 0, fmt.Errorf("calculated gross payout must be greater than zero for user=%s", user.ID)
+	}
+
+	amount, err := a.applyPayoutRules(ctx, user, grossAmount, event.Timestamp)
 	if err != nil {
 		return 0, err
 	}
@@ -190,6 +322,13 @@ func (a *App) ProcessPayout(ctx context.Context, user User, event Event, decisio
 		return 0, fmt.Errorf("create payout transaction: %w", err)
 	}
 
+	if strings.TrimSpace(a.cfg.StripeSecretKey) == "" || amount < minimumInstantTransferAmount {
+		if err := a.completeSimulatedPayout(ctx, payoutTx, event); err != nil {
+			return 0, err
+		}
+		return amount, nil
+	}
+
 	intent, stripeErr := a.createStripePaymentIntent(ctx, payoutTx, decision)
 	if stripeErr != nil {
 		_ = a.db.WithContext(ctx).
@@ -225,7 +364,7 @@ func (a *App) ProcessPayout(ctx context.Context, user User, event Event, decisio
 		return amount, nil
 	}
 
-	if err := a.applyLedgerCredit(ctx, payoutTx, event); err != nil {
+	if err := a.applyLedgerCredit(ctx, payoutTx, event, ledgerEntrySourceStripe); err != nil {
 		return 0, err
 	}
 
@@ -242,6 +381,27 @@ func (a *App) ProcessPayout(ctx context.Context, user User, event Event, decisio
 	}
 
 	return amount, nil
+}
+
+func (a *App) completeSimulatedPayout(ctx context.Context, payoutTx PayoutTransaction, event Event) error {
+	if err := a.applyLedgerCredit(ctx, payoutTx, event, ledgerEntrySourceSimulation); err != nil {
+		return err
+	}
+
+	processedAt := time.Now().UTC()
+	if err := a.db.WithContext(ctx).
+		Model(&PayoutTransaction{}).
+		Where("id = ?", payoutTx.ID).
+		Updates(map[string]any{
+			"status":        payoutStatusCredited,
+			"stripe_status": stripeStatusSimulated,
+			"processed_at":  processedAt,
+			"updated_at":    processedAt,
+		}).Error; err != nil {
+		return fmt.Errorf("finalize simulated payout transaction: %w", err)
+	}
+
+	return nil
 }
 
 func (a *App) createStripePaymentIntent(ctx context.Context, payoutTx PayoutTransaction, decision FRSResult) (*stripePaymentIntentResponse, error) {
@@ -303,9 +463,14 @@ func (a *App) createStripePaymentIntent(ctx context.Context, payoutTx PayoutTran
 	return &parsed, nil
 }
 
-func (a *App) applyLedgerCredit(ctx context.Context, payoutTx PayoutTransaction, event Event) error {
+func (a *App) applyLedgerCredit(ctx context.Context, payoutTx PayoutTransaction, event Event, source string) error {
 	if payoutTx.Amount < 0 {
 		return fmt.Errorf("ledger credit amount must be non-negative: %.2f", payoutTx.Amount)
+	}
+
+	entrySource := strings.TrimSpace(source)
+	if entrySource == "" {
+		entrySource = ledgerEntrySourceStripe
 	}
 
 	now := time.Now().UTC()
@@ -328,7 +493,7 @@ func (a *App) applyLedgerCredit(ctx context.Context, payoutTx PayoutTransaction,
 			EventID:             event.ID,
 			Amount:              payoutTx.Amount,
 			EntryType:           ledgerEntryTypeCredit,
-			Source:              ledgerEntrySourceStripe,
+			Source:              entrySource,
 			CreatedAt:           now,
 		}
 

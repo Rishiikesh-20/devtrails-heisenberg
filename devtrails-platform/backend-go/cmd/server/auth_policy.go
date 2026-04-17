@@ -22,6 +22,9 @@ const (
 	policyStatusCancelled = "cancelled"
 	policyStatusExpired   = "expired"
 
+	userRoleWorker = "worker"
+	userRoleAdmin  = "admin"
+
 	defaultSignupZone       = "south_delhi"
 	defaultSignupShiftStart = "09:00"
 	defaultSignupShiftEnd   = "17:00"
@@ -41,6 +44,7 @@ type SignupRequest struct {
 type policyActionRequest struct {
 	UserID           string `json:"user_id" binding:"required"`
 	AutoRenewEnabled *bool  `json:"auto_renew_enabled,omitempty"`
+	TargetTier       *int   `json:"target_tier,omitempty"`
 }
 
 type policyWaitingPeriodResponse struct {
@@ -50,27 +54,54 @@ type policyWaitingPeriodResponse struct {
 }
 
 type policyCapsResponse struct {
-	MaxPayout          float64 `json:"maxPayout"`
-	RemainingCoverage  float64 `json:"remainingCoverage"`
-	ClaimsPaidThisCycle int    `json:"claimsPaidThisCycle"`
+	MaxPayout           float64 `json:"maxPayout"`
+	RemainingCoverage   float64 `json:"remainingCoverage"`
+	ClaimsPaidThisCycle int     `json:"claimsPaidThisCycle"`
 }
 
 type policySnapshotResponse struct {
-	PolicyNumber   string                      `json:"policyNumber"`
-	PlanName       string                      `json:"planName"`
-	ZoneLabel      string                      `json:"zoneLabel"`
-	Status         string                      `json:"status"`
-	WeeklyPremium  float64                     `json:"weeklyPremium"`
-	CycleStart     string                      `json:"cycleStart"`
-	CycleEnd       string                      `json:"cycleEnd"`
-	NextRenewalDate string                     `json:"nextRenewalDate"`
-	AutoRenewEnabled bool                      `json:"autoRenewEnabled"`
-	WaitingPeriod  policyWaitingPeriodResponse `json:"waitingPeriod"`
-	Caps           policyCapsResponse          `json:"caps"`
+	PolicyNumber     string                      `json:"policyNumber"`
+	PlanName         string                      `json:"planName"`
+	ZoneLabel        string                      `json:"zoneLabel"`
+	Status           string                      `json:"status"`
+	WeeklyPremium    float64                     `json:"weeklyPremium"`
+	CycleStart       string                      `json:"cycleStart"`
+	CycleEnd         string                      `json:"cycleEnd"`
+	NextRenewalDate  string                      `json:"nextRenewalDate"`
+	AutoRenewEnabled bool                        `json:"autoRenewEnabled"`
+	WaitingPeriod    policyWaitingPeriodResponse `json:"waitingPeriod"`
+	Caps             policyCapsResponse          `json:"caps"`
 }
 
 func normalizeEmail(email string) string {
 	return strings.ToLower(strings.TrimSpace(email))
+}
+
+func normalizeUserRole(role string) string {
+	normalized := strings.ToLower(strings.TrimSpace(role))
+	switch normalized {
+	case userRoleAdmin:
+		return userRoleAdmin
+	default:
+		return userRoleWorker
+	}
+}
+
+func resolveRoleForEmail(currentRole string, email string) string {
+	if normalizeUserRole(currentRole) == userRoleAdmin {
+		return userRoleAdmin
+	}
+
+	adminEmail := normalizeEmail(env("ADMIN_EMAIL", ""))
+	if adminEmail != "" && normalizeEmail(email) == adminEmail {
+		return userRoleAdmin
+	}
+
+	return userRoleWorker
+}
+
+func isAdminRole(role string) bool {
+	return normalizeUserRole(role) == userRoleAdmin
 }
 
 func normalizeZone(zone string) string {
@@ -161,6 +192,8 @@ func ensurePolicyDefaults(user *User) {
 	if user == nil {
 		return
 	}
+
+	user.Role = normalizeUserRole(user.Role)
 
 	if strings.TrimSpace(user.PolicyNumber) == "" {
 		user.PolicyNumber = generatePolicyNumber()
@@ -257,6 +290,36 @@ func (a *App) findUserByID(ctx context.Context, userID string) (*User, error) {
 	return &user, nil
 }
 
+func (a *App) requireAdminUser(c *gin.Context) (*User, bool) {
+	userID := strings.TrimSpace(c.Query("user_id"))
+	if userID == "" {
+		userID = strings.TrimSpace(c.GetHeader("X-User-ID"))
+	}
+
+	if userID == "" {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "admin authentication required"})
+		return nil, false
+	}
+
+	user, err := a.findUserByID(c.Request.Context(), userID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "admin authentication failed"})
+			return nil, false
+		}
+
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to authorize admin", "details": err.Error()})
+		return nil, false
+	}
+
+	if !isAdminRole(user.Role) {
+		c.JSON(http.StatusForbidden, gin.H{"error": "admin access required"})
+		return nil, false
+	}
+
+	return user, true
+}
+
 func (a *App) signupUser(c *gin.Context) {
 	var req SignupRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -309,6 +372,7 @@ func (a *App) signupUser(c *gin.Context) {
 		existing.ShiftEnd = defaultSignupShiftEnd
 		existing.ShiftStatus = "inactive"
 		existing.Active = false
+		existing.Role = resolveRoleForEmail(existing.Role, existing.Email)
 		existing.RiskTier = tier
 		existing.WeeklyPremium = premium
 		ensurePolicyDefaults(&existing)
@@ -336,21 +400,22 @@ func (a *App) signupUser(c *gin.Context) {
 	}
 
 	user := User{
-		ID:              uuid.NewString(),
-		Email:           email,
-		FullName:        fullName,
-		Phone:           phone,
-		Zone:            defaultSignupZone,
-		ShiftStart:      defaultSignupShiftStart,
-		ShiftEnd:        defaultSignupShiftEnd,
-		ShiftStatus:     "inactive",
-		Active:          false,
-		RiskTier:        tier,
-		WeeklyPremium:   premium,
-		WagePerHour:     defaultWagePerHour,
-		PasswordHash:    string(hashBytes),
-		PolicyNumber:    generatePolicyNumber(),
-		PolicyStatus:    policyStatusPending,
+		ID:               uuid.NewString(),
+		Email:            email,
+		FullName:         fullName,
+		Phone:            phone,
+		Zone:             defaultSignupZone,
+		ShiftStart:       defaultSignupShiftStart,
+		ShiftEnd:         defaultSignupShiftEnd,
+		ShiftStatus:      "inactive",
+		Active:           false,
+		Role:             resolveRoleForEmail("", email),
+		RiskTier:         tier,
+		WeeklyPremium:    premium,
+		WagePerHour:      defaultWagePerHour,
+		PasswordHash:     string(hashBytes),
+		PolicyNumber:     generatePolicyNumber(),
+		PolicyStatus:     policyStatusPending,
 		AutoRenewEnabled: true,
 	}
 	ensurePolicyDefaults(&user)
@@ -466,6 +531,18 @@ func (a *App) handlePolicyAction(c *gin.Context, action string) {
 	now := time.Now().UTC()
 	status := normalizePolicyStatus(user.PolicyStatus)
 	message := "policy updated"
+
+	if req.TargetTier != nil {
+		if *req.TargetTier < 1 || *req.TargetTier > 3 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "target_tier must be between 1 and 3"})
+			return
+		}
+
+		if action == "activate" || action == "renew" {
+			user.RiskTier = *req.TargetTier
+			user.WeeklyPremium = tierFallbackPremium(*req.TargetTier)
+		}
+	}
 
 	switch action {
 	case "activate":
@@ -614,8 +691,8 @@ func (a *App) buildPolicySnapshot(ctx context.Context, user User) (policySnapsho
 		AutoRenewEnabled: user.AutoRenewEnabled,
 		WaitingPeriod:    waitingPeriod,
 		Caps: policyCapsResponse{
-			MaxPayout:          maxPayout,
-			RemainingCoverage:  roundCurrency(remainingCoverage),
+			MaxPayout:           maxPayout,
+			RemainingCoverage:   roundCurrency(remainingCoverage),
 			ClaimsPaidThisCycle: claimsPaidThisCycle,
 		},
 	}, nil

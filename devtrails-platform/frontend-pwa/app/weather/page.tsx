@@ -49,6 +49,8 @@ export default function WeatherPage() {
   const hasLoadedRef = React.useRef(false);
   const addToastRef = React.useRef(addToast);
   addToastRef.current = addToast;
+  const userRef = React.useRef<RegisterResponse | null>(null);
+  userRef.current = user;
 
   useEffect(() => {
     queueMicrotask(() => {
@@ -60,7 +62,11 @@ export default function WeatherPage() {
   const fetchSignals = useCallback(
     async (signal?: AbortSignal) => {
       try {
+        const zone = userRef.current?.zone?.trim();
         let path = "/api/v1/weather?limit=50";
+        if (zone) {
+          path += `&zone=${encodeURIComponent(zone)}`;
+        }
         if (filterRef.current === "true") path += "&triggered=true";
         else if (filterRef.current === "false") path += "&triggered=false";
         const res = await apiGet<WeatherListResponse>(path, signal);

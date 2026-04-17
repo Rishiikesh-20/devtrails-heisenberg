@@ -1,9 +1,11 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
-import { MapContainer, TileLayer, Marker, Popup, Circle, Polyline, Polygon } from 'react-leaflet';
+import React from 'react';
+import { MapContainer, TileLayer, Marker, Popup, Polyline, Polygon } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
+import { getUser } from '../../lib/api';
+import { getZoneByValue } from '../../lib/constants';
 
 // Fix for default marker icons in Next.js + Leaflet
 const DefaultIcon = L.icon({
@@ -26,21 +28,37 @@ const customPulseIcon = L.divIcon({
 });
 
 export default function SignalMapClient() {
-  const center: [number, number] = [28.6139, 77.2090]; // New Delhi center
+  const user = getUser();
+  const zone = getZoneByValue(user?.zone);
+  const center: [number, number] = [zone.lat, zone.lng];
 
   // Route Congestion coordinates
   const trafficRoute: [number, number][] = [
-    [28.6139, 77.2090], [28.6200, 77.2150], [28.6250, 77.2200], [28.6300, 77.2280]
+    [center[0], center[1]],
+    [center[0] + 0.004, center[1] + 0.006],
+    [center[0] + 0.009, center[1] + 0.012],
+    [center[0] + 0.013, center[1] + 0.017],
   ];
 
   // Flood zones
   const floodZone: [number, number][] = [
-    [28.59, 77.24], [28.60, 77.26], [28.58, 77.28], [28.57, 77.25]
+    [center[0] - 0.018, center[1] + 0.01],
+    [center[0] - 0.01, center[1] + 0.02],
+    [center[0] - 0.024, center[1] + 0.03],
+    [center[0] - 0.03, center[1] + 0.015],
   ];
 
   const markers = [
-    { pos: [28.6139, 77.2090] as [number, number], title: "Signal Origin: Traffic Lock", severity: "High" },
-    { pos: [28.5850, 77.2600] as [number, number], title: "Place Marker: Yamuna River Overflow", severity: "Critical" }
+    {
+      pos: [center[0], center[1]] as [number, number],
+      title: `Signal Origin: ${zone.label}`,
+      severity: 'High',
+    },
+    {
+      pos: [center[0] - 0.014, center[1] + 0.018] as [number, number],
+      title: `Impact Marker: ${zone.label}`,
+      severity: 'Critical',
+    },
   ];
 
   return (

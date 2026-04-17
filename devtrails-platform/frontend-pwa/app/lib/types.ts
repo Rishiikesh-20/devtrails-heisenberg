@@ -18,6 +18,7 @@ export type RegisterResponse = {
   email: string;
   full_name: string;
   phone?: string;
+  role?: "worker" | "admin";
   zone: string;
   shift_start: string;
   shift_end: string;

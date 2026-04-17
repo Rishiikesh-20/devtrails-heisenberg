@@ -1,0 +1,110 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://devtrails.local/contracts/claim_batch.schema.json",
+  "title": "claim_batch",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "batch_id",
+    "event_id",
+    "event_type",
+    "zone_id",
+    "submitted_at",
+    "claims"
+  ],
+  "properties": {
+    "batch_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "event_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "event_type": {
+      "type": "string",
+      "enum": [
+        "heavy_rain",
+        "severe_wind",
+        "platform_outage",
+        "curfew",
+        "fuel_shortage",
+        "traffic_disruption"
+      ]
+    },
+    "zone_id": {
+      "type": "string",
+      "pattern": "^[a-z0-9_-]{2,64}$"
+    },
+    "submitted_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "claims": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "claim_id",
+          "worker_id",
+          "policy_id",
+          "policy_started_at",
+          "is_renewal",
+          "claimed_amount",
+          "currency",
+          "avg_weekly_earnings",
+          "recent_claims",
+          "device_link_count",
+          "account_link_count"
+        ],
+        "properties": {
+          "claim_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "worker_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "policy_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "policy_started_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "is_renewal": {
+            "type": "boolean"
+          },
+          "claimed_amount": {
+            "type": "number",
+            "minimum": 0
+          },
+          "currency": {
+            "type": "string",
+            "pattern": "^[a-z]{3}$"
+          },
+          "avg_weekly_earnings": {
+            "type": "number",
+            "minimum": 0
+          },
+          "recent_claims": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "device_link_count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "account_link_count": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      }
+    }
+  }
+}

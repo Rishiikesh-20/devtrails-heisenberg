@@ -61,7 +61,7 @@ export const EvidencePanel = () => {
           </div>
           <div className="flex-1 min-w-0">
             <p className="text-xs font-semibold text-gray-800 truncate">Oracle Signature</p>
-            <p className="text-[10px] text-gray-500 mt-0.5">TomTom Traffic DB</p>
+				<p className="text-[10px] text-gray-500 mt-0.5">OSRM + OpenRouteService Trace</p>
           </div>
         </div>
       </div>

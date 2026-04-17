@@ -79,8 +79,8 @@ export const OracleInsightsDrawer = ({ alert, isOpen, onClose }: OracleInsightsD
                <Database className="w-3.5 h-3.5" /> Evidence Sources
              </h4>
              <ul className="list-disc list-inside text-sm text-gray-400 space-y-1 ml-2">
-               <li><span className="text-gray-200">TomTom Traffic</span>: Gridlock level API trace</li>
-               <li><span className="text-gray-200">India Met Dept</span>: Heavy rainfall localized event</li>
+         <li><span className="text-gray-200">OSRM / OpenRouteService</span>: Route congestion trace</li>
+         <li><span className="text-gray-200">Open-Meteo Poller</span>: Zone rainfall and wind evidence</li>
              </ul>
              <div className="mt-4 p-2.5 bg-black/50 border border-white/5 rounded-lg overflow-x-auto">
                <pre className="text-xs text-gray-500 font-mono">

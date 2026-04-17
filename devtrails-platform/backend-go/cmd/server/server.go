@@ -56,31 +56,32 @@ type App struct {
 }
 
 type User struct {
-	ID                string     `gorm:"type:uuid;primaryKey" json:"id"`
-	Email             string     `gorm:"uniqueIndex;not null" json:"email"`
-	FullName          string     `gorm:"not null" json:"full_name"`
-	Phone             string     `gorm:"type:text" json:"phone,omitempty"`
-	Zone              string     `gorm:"index;not null" json:"zone"`
-	ShiftStart        string     `gorm:"not null" json:"shift_start"`
-	ShiftEnd          string     `gorm:"not null" json:"shift_end"`
-	ShiftStatus       string     `gorm:"index;not null;default:'inactive'" json:"shift_status"`
-	Active            bool       `gorm:"index;default:true" json:"active"`
-	RiskTier          int        `gorm:"not null;default:3" json:"risk_tier"`
-	WeeklyPremium     float64    `gorm:"type:numeric(10,2);not null;default:0" json:"weekly_premium"`
-	WagePerHour       float64    `gorm:"type:numeric(10,2);not null;default:150" json:"wage_per_hour"`
-	PasswordHash      string     `gorm:"type:text" json:"-"`
-	PolicyNumber      string     `gorm:"type:text;index" json:"policy_number,omitempty"`
-	PolicyStatus      string     `gorm:"type:text;not null;default:'pending'" json:"policy_status"`
-	PolicyActivatedAt *time.Time `json:"policy_activated_at,omitempty"`
-	PolicyWaitingUntil *time.Time `json:"policy_waiting_until,omitempty"`
-	PolicyCycleStartAt *time.Time `json:"policy_cycle_start_at,omitempty"`
-	PolicyCycleEndAt   *time.Time `json:"policy_cycle_end_at,omitempty"`
+	ID                  string     `gorm:"type:uuid;primaryKey" json:"id"`
+	Email               string     `gorm:"uniqueIndex;not null" json:"email"`
+	FullName            string     `gorm:"not null" json:"full_name"`
+	Phone               string     `gorm:"type:text" json:"phone,omitempty"`
+	Zone                string     `gorm:"index;not null" json:"zone"`
+	ShiftStart          string     `gorm:"not null" json:"shift_start"`
+	ShiftEnd            string     `gorm:"not null" json:"shift_end"`
+	ShiftStatus         string     `gorm:"index;not null;default:'inactive'" json:"shift_status"`
+	Active              bool       `gorm:"index;default:true" json:"active"`
+	Role                string     `gorm:"type:text;not null;default:'worker';index" json:"role"`
+	RiskTier            int        `gorm:"not null;default:3" json:"risk_tier"`
+	WeeklyPremium       float64    `gorm:"type:numeric(10,2);not null;default:0" json:"weekly_premium"`
+	WagePerHour         float64    `gorm:"type:numeric(10,2);not null;default:150" json:"wage_per_hour"`
+	PasswordHash        string     `gorm:"type:text" json:"-"`
+	PolicyNumber        string     `gorm:"type:text;index" json:"policy_number,omitempty"`
+	PolicyStatus        string     `gorm:"type:text;not null;default:'pending'" json:"policy_status"`
+	PolicyActivatedAt   *time.Time `json:"policy_activated_at,omitempty"`
+	PolicyWaitingUntil  *time.Time `json:"policy_waiting_until,omitempty"`
+	PolicyCycleStartAt  *time.Time `json:"policy_cycle_start_at,omitempty"`
+	PolicyCycleEndAt    *time.Time `json:"policy_cycle_end_at,omitempty"`
 	PolicyNextRenewalAt *time.Time `json:"policy_next_renewal_at,omitempty"`
-	AutoRenewEnabled  bool       `gorm:"not null;default:true" json:"auto_renew_enabled"`
-	PolicyPausedAt    *time.Time `json:"policy_paused_at,omitempty"`
-	PolicyCancelledAt *time.Time `json:"policy_cancelled_at,omitempty"`
-	CreatedAt         time.Time  `json:"created_at"`
-	UpdatedAt         time.Time  `json:"updated_at"`
+	AutoRenewEnabled    bool       `gorm:"not null;default:true" json:"auto_renew_enabled"`
+	PolicyPausedAt      *time.Time `json:"policy_paused_at,omitempty"`
+	PolicyCancelledAt   *time.Time `json:"policy_cancelled_at,omitempty"`
+	CreatedAt           time.Time  `json:"created_at"`
+	UpdatedAt           time.Time  `json:"updated_at"`
 }
 
 type RegisterRequest struct {
@@ -489,6 +490,7 @@ func (a *App) registerUser(c *gin.Context) {
 		existing.ShiftEnd = shiftEnd
 		existing.ShiftStatus = "active"
 		existing.Active = true
+		existing.Role = resolveRoleForEmail(existing.Role, existing.Email)
 		existing.RiskTier = tier
 		existing.WeeklyPremium = premium
 		existing.WagePerHour = wagePerHour
@@ -512,19 +514,20 @@ func (a *App) registerUser(c *gin.Context) {
 	}
 
 	user := User{
-		ID:              uuid.NewString(),
-		Email:           email,
-		FullName:        fullName,
-		Zone:            zone,
-		ShiftStart:      shiftStart,
-		ShiftEnd:        shiftEnd,
-		ShiftStatus:     "active",
-		Active:          true,
-		RiskTier:        tier,
-		WeeklyPremium:   premium,
-		WagePerHour:     wagePerHour,
-		PolicyStatus:    policyStatusPending,
-		PolicyNumber:    generatePolicyNumber(),
+		ID:               uuid.NewString(),
+		Email:            email,
+		FullName:         fullName,
+		Zone:             zone,
+		ShiftStart:       shiftStart,
+		ShiftEnd:         shiftEnd,
+		ShiftStatus:      "active",
+		Active:           true,
+		Role:             resolveRoleForEmail("", email),
+		RiskTier:         tier,
+		WeeklyPremium:    premium,
+		WagePerHour:      wagePerHour,
+		PolicyStatus:     policyStatusPending,
+		PolicyNumber:     generatePolicyNumber(),
 		AutoRenewEnabled: true,
 	}
 	ensurePolicyDefaults(&user)
@@ -688,31 +691,36 @@ func buildPricingBreakdown(riskTier int, weeklyPremium float64) gin.H {
 
 func buildAuthPayload(user User) gin.H {
 	return gin.H{
-		"id":                user.ID,
-		"email":             user.Email,
-		"full_name":         user.FullName,
-		"phone":             user.Phone,
-		"zone":              user.Zone,
-		"shift_start":       user.ShiftStart,
-		"shift_end":         user.ShiftEnd,
-		"shift_status":      user.ShiftStatus,
-		"active":            user.Active,
-		"tier":              user.RiskTier,
-		"weekly_premium":    user.WeeklyPremium,
-		"wage_per_hour":     user.WagePerHour,
-		"policy_number":     user.PolicyNumber,
-		"policy_status":     user.PolicyStatus,
-		"auto_renew_enabled": user.AutoRenewEnabled,
-		"policy_activated_at": user.PolicyActivatedAt,
-		"policy_waiting_until": user.PolicyWaitingUntil,
-		"policy_cycle_start_at": user.PolicyCycleStartAt,
-		"policy_cycle_end_at": user.PolicyCycleEndAt,
+		"id":                     user.ID,
+		"email":                  user.Email,
+		"full_name":              user.FullName,
+		"phone":                  user.Phone,
+		"zone":                   user.Zone,
+		"shift_start":            user.ShiftStart,
+		"shift_end":              user.ShiftEnd,
+		"shift_status":           user.ShiftStatus,
+		"active":                 user.Active,
+		"role":                   normalizeUserRole(user.Role),
+		"tier":                   user.RiskTier,
+		"weekly_premium":         user.WeeklyPremium,
+		"wage_per_hour":          user.WagePerHour,
+		"policy_number":          user.PolicyNumber,
+		"policy_status":          user.PolicyStatus,
+		"auto_renew_enabled":     user.AutoRenewEnabled,
+		"policy_activated_at":    user.PolicyActivatedAt,
+		"policy_waiting_until":   user.PolicyWaitingUntil,
+		"policy_cycle_start_at":  user.PolicyCycleStartAt,
+		"policy_cycle_end_at":    user.PolicyCycleEndAt,
 		"policy_next_renewal_at": user.PolicyNextRenewalAt,
-		"pricing_breakdown": buildPricingBreakdown(user.RiskTier, user.WeeklyPremium),
+		"pricing_breakdown":      buildPricingBreakdown(user.RiskTier, user.WeeklyPremium),
 	}
 }
 
 func (a *App) getAdminMetrics(c *gin.Context) {
+	if _, ok := a.requireAdminUser(c); !ok {
+		return
+	}
+
 	var metrics AdminMetrics
 
 	if err := a.db.Raw("SELECT COUNT(*) FROM users WHERE active = true;").Scan(&metrics.TotalActivePolicies).Error; err != nil {
@@ -871,7 +879,7 @@ func (a *App) processDisruptionEvent(ctx context.Context, event disruptionEvent)
 		eventID = uuid.NewString()
 	}
 
-	eventForPayout := Event{
+	baseEventForPayout := Event{
 		ID:             eventID,
 		Type:           event.EventType,
 		SeverityFactor: event.SeverityFactor,
@@ -879,11 +887,15 @@ func (a *App) processDisruptionEvent(ctx context.Context, event disruptionEvent)
 	}
 
 	usersByID := make(map[string]User, len(users))
+	eventsByWorkerID := make(map[string]Event, len(users))
 	payoutAmounts := make(map[string]float64, len(users))
 
 	batch := make([]Claim, 0, len(users))
 	for _, u := range users {
 		usersByID[u.ID] = u
+		userEvent := baseEventForPayout
+		userEvent.LostHours = estimateLostHoursForShift(u.ShiftStart, u.ShiftEnd)
+		eventsByWorkerID[u.ID] = userEvent
 
 		policyStartAt := u.CreatedAt.Unix()
 		minimumPolicyAgeSeconds := int64((72 * time.Hour) / time.Second)
@@ -892,7 +904,7 @@ func (a *App) processDisruptionEvent(ctx context.Context, event disruptionEvent)
 			policyStartAt = oldestAllowedStart
 		}
 
-		calculatedAmount, calcErr := CalculatePayout(u, eventForPayout)
+		calculatedAmount, calcErr := CalculatePayout(u, userEvent)
 		if calcErr != nil {
 			log.Printf("calculate payout failed user=%s event_id=%s err=%v", u.ID, eventID, calcErr)
 			continue
@@ -968,7 +980,13 @@ func (a *App) processDisruptionEvent(ctx context.Context, event disruptionEvent)
 			continue
 		}
 
-		paidAmount, payoutErr := a.ProcessPayout(ctx, user, eventForPayout, claim)
+		eventForWorker, ok := eventsByWorkerID[claim.WorkerID]
+		if !ok {
+			log.Printf("event context missing for payout worker_id=%s event_id=%s", claim.WorkerID, eventID)
+			continue
+		}
+
+		paidAmount, payoutErr := a.ProcessPayout(ctx, user, eventForWorker, claim)
 		if payoutErr != nil {
 			log.Printf("payout failed worker_id=%s event_id=%s err=%v", claim.WorkerID, eventID, payoutErr)
 			continue
@@ -1160,6 +1178,7 @@ func (a *App) pollAndStoreWeather(ctx context.Context) {
 		{BaseURL: a.cfg.OpenMeteoBaseURL, Latitude: 19.1136, Longitude: 72.8697, PollingZone: "andheri_mum"},
 		{BaseURL: a.cfg.OpenMeteoBaseURL, Latitude: 13.0418, Longitude: 80.2341, PollingZone: "t_nagar_che"},
 		{BaseURL: a.cfg.OpenMeteoBaseURL, Latitude: 17.4435, Longitude: 78.3772, PollingZone: "hitech_city_hyd"},
+		{BaseURL: a.cfg.OpenMeteoBaseURL, Latitude: 11.0168, Longitude: 76.9558, PollingZone: "coimbatore"},
 	}
 
 	for _, fetchCfg := range locations {

@@ -8,7 +8,6 @@ export const SourceHealthPanel = () => {
       {mockHealthData.map((node) => {
         const isHealthy = node.status === 'Healthy';
         const isDegraded = node.status === 'Degraded';
-        const statusColor = isHealthy ? 'text-teal-600' : isDegraded ? 'text-amber-600' : 'text-red-600';
         const statusBg = isHealthy ? 'bg-teal-50 border-teal-100' : isDegraded ? 'bg-amber-50 border-amber-100' : 'bg-red-50 border-red-100';
         const barColor = isHealthy ? 'bg-teal-500' : isDegraded ? 'bg-amber-500' : 'bg-red-500';
 

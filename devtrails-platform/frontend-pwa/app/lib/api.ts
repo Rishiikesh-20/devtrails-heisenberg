@@ -28,6 +28,26 @@ function isSessionUser(value: unknown): value is RegisterResponse {
   );
 }
 
+function buildSessionHeaders(): Record<string, string> {
+  if (typeof window === "undefined") {
+    return {};
+  }
+
+  const user = getUser();
+  if (!user?.id) {
+    return {};
+  }
+
+  const headers: Record<string, string> = {
+    "X-User-ID": user.id,
+  };
+  if (user.role) {
+    headers["X-User-Role"] = user.role;
+  }
+
+  return headers;
+}
+
 // ─── Generic fetchers ────────────────────────────────────
 export class ApiError extends Error {
   status: number;
@@ -58,8 +78,9 @@ export async function apiGet<T>(
   path: string,
   signal?: AbortSignal,
 ): Promise<T> {
+  const sessionHeaders = buildSessionHeaders();
   const res = await fetch(`${API_BASE_URL}${path}`, {
-    headers: { Accept: "application/json" },
+    headers: { Accept: "application/json", ...sessionHeaders },
     signal,
   });
   return handleResponse<T>(res);
@@ -70,9 +91,14 @@ export async function apiPost<T>(
   body: unknown,
   signal?: AbortSignal,
 ): Promise<T> {
+  const sessionHeaders = buildSessionHeaders();
   const res = await fetch(`${API_BASE_URL}${path}`, {
     method: "POST",
-    headers: { "Content-Type": "application/json", Accept: "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      Accept: "application/json",
+      ...sessionHeaders,
+    },
     body: JSON.stringify(body),
     signal,
   });
