@@ -7,13 +7,19 @@ import { isLoggedIn } from "../../lib/api";
 
 export function Navbar() {
   const [scrolled, setScrolled] = useState(false);
-  const [loggedIn] = useState(() => isLoggedIn());
+  const [loggedIn, setLoggedIn] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
 
   useEffect(() => {
     const handleScroll = () => setScrolled(window.scrollY > 20);
     window.addEventListener("scroll", handleScroll);
     return () => window.removeEventListener("scroll", handleScroll);
+  }, []);
+
+  useEffect(() => {
+    queueMicrotask(() => {
+      setLoggedIn(isLoggedIn());
+    });
   }, []);
 
   return (
