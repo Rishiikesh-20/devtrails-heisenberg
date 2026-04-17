@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Eye, EyeOff, Shield } from "lucide-react";
 import { useToast } from "../components/ui/ToastProvider";
-import { apiPost, setUser, setOnboarding, getUser, getSignupDraft } from "../lib/api";
+import { apiPost, setUser, setOnboarding } from "../lib/api";
 import type { RegisterResponse, OnboardingPayload } from "../lib/types";
 
 type LoginResponse = RegisterResponse & {
@@ -57,25 +57,9 @@ export default function LoginPage() {
         localStorage.setItem("wagelock.last-email", normalizedEmail);
       }
 
-      addToast(`Welcome back, ${res.full_name ?? "Partner"}! 👋`, "success");
+      addToast(`Welcome back, ${res.full_name ?? "Partner"}!`, "success");
       router.push("/dashboard");
     } catch (err) {
-      // Local-session fallback
-      const normalizedEmail = email.trim().toLowerCase();
-      const existingUser = getUser();
-      if (existingUser?.email?.trim().toLowerCase() === normalizedEmail) {
-        addToast("Welcome back!", "success");
-        router.push("/dashboard");
-        return;
-      }
-
-      const signupDraft = getSignupDraft();
-      if (signupDraft?.email?.trim().toLowerCase() === normalizedEmail) {
-        addToast("Let's finish setting up your profile.", "info");
-        router.push("/onboarding");
-        return;
-      }
-
       addToast(
         err instanceof Error ? err.message : "Sign in failed. Please check your details.",
         "error",
@@ -190,8 +174,7 @@ export default function LoginPage() {
             </button>
 
             <p className="text-xs text-gray-400 leading-relaxed">
-              This prototype uses onboarding-based account setup. If you have not
-              completed onboarding yet, we&apos;ll guide you there.
+              Use your registered account credentials to continue.
             </p>
           </form>
         </div>

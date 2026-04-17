@@ -12,6 +12,11 @@ type PolicyStatusCardProps = {
 };
 
 const statusTheme: Record<PolicyStatus, { label: string; className: string; description: string }> = {
+  pending: {
+    label: "Pending",
+    className: "bg-slate-100 text-slate-700 border border-slate-200",
+    description: "Policy is created but not yet activated.",
+  },
   active: {
     label: "Active",
     className: "bg-teal-50 text-teal-700 border border-teal-200",
@@ -26,6 +31,16 @@ const statusTheme: Record<PolicyStatus, { label: string; className: string; desc
     label: "Expired",
     className: "bg-red-50 text-red-700 border border-red-200",
     description: "Coverage is inactive until the next renewal.",
+  },
+  paused: {
+    label: "Paused",
+    className: "bg-amber-50 text-amber-700 border border-amber-200",
+    description: "Coverage is paused and auto-renew is disabled.",
+  },
+  cancelled: {
+    label: "Cancelled",
+    className: "bg-rose-50 text-rose-700 border border-rose-200",
+    description: "Policy has been cancelled and no payouts will trigger.",
   },
 };
 
@@ -77,10 +92,19 @@ export function PolicyStatusCard({
         <p className="text-[10px] uppercase tracking-wider text-gray-500 font-semibold mb-2">Status Legend</p>
         <div className="flex flex-wrap gap-3 text-xs text-gray-700">
           <span className="inline-flex items-center gap-1.5">
+            <CircleDot size={12} className="text-slate-500" /> Pending
+          </span>
+          <span className="inline-flex items-center gap-1.5">
             <CircleDot size={12} className="text-teal-500" /> Active
           </span>
           <span className="inline-flex items-center gap-1.5">
             <Clock3 size={12} className="text-amber-500" /> Waiting
+          </span>
+          <span className="inline-flex items-center gap-1.5">
+            <CircleDot size={12} className="text-amber-700" /> Paused
+          </span>
+          <span className="inline-flex items-center gap-1.5">
+            <CircleDot size={12} className="text-rose-600" /> Cancelled
           </span>
           <span className="inline-flex items-center gap-1.5">
             <CircleDot size={12} className="text-red-500" /> Expired

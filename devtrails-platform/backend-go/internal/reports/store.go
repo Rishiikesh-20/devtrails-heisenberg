@@ -5,18 +5,24 @@ import (
 )
 
 type ReportQueryFilters struct {
+	UserID   *string
 	Zone     *string
 	Category *string
 	Status   *string
 	Limit    int
+	Offset   int
 }
 
 func SaveReport(db *gorm.DB, report *UserReport) error {
 	return db.Create(report).Error
 }
 
-func QueryReports(db *gorm.DB, filters ReportQueryFilters) ([]UserReport, error) {
+func QueryReports(db *gorm.DB, filters ReportQueryFilters) ([]UserReport, int64, error) {
 	query := db.Model(&UserReport{})
+
+	if filters.UserID != nil && *filters.UserID != "" {
+		query = query.Where("user_id = ?", *filters.UserID)
+	}
 
 	if filters.Zone != nil && *filters.Zone != "" {
 		query = query.Where("zone = ?", *filters.Zone)
@@ -28,6 +34,11 @@ func QueryReports(db *gorm.DB, filters ReportQueryFilters) ([]UserReport, error)
 		query = query.Where("status = ?", *filters.Status)
 	}
 
+	var total int64
+	if err := query.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+
 	limit := filters.Limit
 	if limit <= 0 {
 		limit = 50
@@ -35,10 +46,15 @@ func QueryReports(db *gorm.DB, filters ReportQueryFilters) ([]UserReport, error)
 		limit = 200
 	}
 
-	var results []UserReport
-	if err := query.Limit(limit).Order("reported_at DESC").Find(&results).Error; err != nil {
-		return nil, err
+	offset := filters.Offset
+	if offset < 0 {
+		offset = 0
 	}
 
-	return results, nil
+	var results []UserReport
+	if err := query.Limit(limit).Offset(offset).Order("reported_at DESC").Find(&results).Error; err != nil {
+		return nil, 0, err
+	}
+
+	return results, total, nil
 }

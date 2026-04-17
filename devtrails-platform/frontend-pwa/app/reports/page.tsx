@@ -17,6 +17,7 @@ import { PageShell } from "../components/ui/PageShell";
 import { useToast } from "../components/ui/ToastProvider";
 import { apiGet, apiPost, getUser, getOnboarding } from "../lib/api";
 import { REPORT_CATEGORIES } from "../lib/constants";
+import type { RegisterResponse } from "../lib/types";
 
 type Report = {
   id: string;
@@ -55,8 +56,8 @@ export default function ReportsPage() {
   const router = useRouter();
   const { addToast } = useToast();
 
-  const [user, setUser] = useState<any>(null);
-  const [mounted, setMounted] = useState(false);
+  const [user, setUser] = useState<RegisterResponse | null>(null);
+  const [sessionResolved, setSessionResolved] = useState(false);
 
   const [category, setCategory] = useState<string>(REPORT_CATEGORIES[0].value);
   const [severity, setSeverity] = useState(3);
@@ -67,6 +68,13 @@ export default function ReportsPage() {
   const [loadingReports, setLoadingReports] = useState(true);
 
   const zoneRef = useRef("");
+
+  useEffect(() => {
+    queueMicrotask(() => {
+      setUser(getUser());
+      setSessionResolved(true);
+    });
+  }, []);
 
   const fetchReports = useCallback(
     async (signal?: AbortSignal) => {
@@ -87,30 +95,40 @@ export default function ReportsPage() {
   );
 
   useEffect(() => {
-    const u = getUser();
-    const ob = getOnboarding();
-    setUser(u);
-    zoneRef.current = u?.zone ?? ob?.zone ?? "";
-    setMounted(true);
+    if (!sessionResolved) {
+      return;
+    }
 
-    if (!u) {
+    const ob = getOnboarding();
+    zoneRef.current = user?.zone ?? ob?.zone ?? "";
+
+    if (!user) {
       router.replace("/login");
       return;
     }
     const controller = new AbortController();
-    fetchReports(controller.signal);
+    queueMicrotask(() => {
+      if (!controller.signal.aborted) {
+        void fetchReports(controller.signal);
+      }
+    });
     return () => controller.abort();
-  }, [router, fetchReports]);
+  }, [router, fetchReports, sessionResolved, user]);
 
   const onSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (!user) return;
 
+    if (!zoneRef.current) {
+      addToast("Zone is required before submitting a report.", "warning");
+      return;
+    }
+
     setSubmitting(true);
     try {
       await apiPost<{ message: string }>("/api/v1/reports", {
         user_id: user.id,
-        zone: zoneRef.current || "unknown",
+        zone: zoneRef.current,
         category,
         severity,
         details,
@@ -129,7 +147,7 @@ export default function ReportsPage() {
     }
   };
 
-  if (!mounted) return null;
+  if (!sessionResolved) return null;
   if (!user) return null;
 
   return (
@@ -246,7 +264,7 @@ export default function ReportsPage() {
                 </span>
               </div>
 
-              <div className="divide-y divide-gray-50 max-h-[600px] overflow-y-auto">
+              <div className="divide-y divide-gray-50 max-h-150 overflow-y-auto">
                 {loadingReports ? (
                   <div className="px-5 py-12 space-y-3">
                     <div className="skeleton-light h-12 w-full rounded-xl" />
@@ -308,7 +326,7 @@ function ReportRow({ report }: { report: Report }) {
           <span className="text-[10px] text-gray-400">Severity {report.severity}/5</span>
           {report.authenticity_score > 0 && (
             <span className="text-[10px] text-teal-600">
-              Auth: {(report.authenticity_score * 100).toFixed(0)}%
+              Auth: {report.authenticity_score.toFixed(0)}%
             </span>
           )}
         </div>

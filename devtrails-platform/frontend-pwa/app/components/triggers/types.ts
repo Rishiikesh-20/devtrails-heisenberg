@@ -6,7 +6,7 @@ export interface EvidenceData {
   rawPayload: string;
   confidenceScore: number;
   provider: string;
-  metadata: Record<string, any>;
+  metadata: Record<string, unknown>;
 }
 
 export interface TriggerEvent {

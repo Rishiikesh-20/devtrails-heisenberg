@@ -14,6 +14,7 @@ import {
 import { PageShell } from "../components/ui/PageShell";
 import { useToast } from "../components/ui/ToastProvider";
 import { apiGet, getUser } from "../lib/api";
+import type { RegisterResponse } from "../lib/types";
 
 type WeatherSignal = {
   id: string;
@@ -35,8 +36,8 @@ export default function WeatherPage() {
   const router = useRouter();
   const { addToast } = useToast();
 
-  const [user, setUser] = useState<any>(null);
-  const [mounted, setMounted] = useState(false);
+  const [user, setUser] = useState<RegisterResponse | null>(null);
+  const [sessionResolved, setSessionResolved] = useState(false);
 
   const [signals, setSignals] = useState<WeatherSignal[]>([]);
   const [loading, setLoading] = useState(true);
@@ -48,6 +49,13 @@ export default function WeatherPage() {
   const hasLoadedRef = React.useRef(false);
   const addToastRef = React.useRef(addToast);
   addToastRef.current = addToast;
+
+  useEffect(() => {
+    queueMicrotask(() => {
+      setUser(getUser());
+      setSessionResolved(true);
+    });
+  }, []);
 
   const fetchSignals = useCallback(
     async (signal?: AbortSignal) => {
@@ -77,22 +85,28 @@ export default function WeatherPage() {
   );
 
   useEffect(() => {
-    const u = getUser();
-    setUser(u);
-    setMounted(true);
+    if (!sessionResolved) {
+      return;
+    }
 
-    if (!u) {
+    if (!user) {
       router.replace("/login");
       return;
     }
     const controller = new AbortController();
-    fetchSignals(controller.signal);
+    queueMicrotask(() => {
+      if (!controller.signal.aborted) {
+        void fetchSignals(controller.signal);
+      }
+    });
     return () => controller.abort();
-  }, [router, fetchSignals]);
+  }, [router, fetchSignals, sessionResolved, user]);
 
   useEffect(() => {
     if (!hasLoadedRef.current) return;
-    fetchSignals();
+    queueMicrotask(() => {
+      void fetchSignals();
+    });
   }, [filterTriggered, fetchSignals]);
 
   useEffect(() => {
@@ -106,7 +120,7 @@ export default function WeatherPage() {
     addToast("Refreshing weather signals...", "info", 2000);
   };
 
-  if (!mounted) return null;
+  if (!sessionResolved) return null;
   if (!user) return null;
 
   const triggeredCount = signals.filter((s) => s.threshold_crossed).length;
@@ -207,7 +221,7 @@ export default function WeatherPage() {
             <div className="col-span-2">Time</div>
           </div>
 
-          <div className="divide-y divide-gray-50 max-h-[500px] overflow-y-auto">
+          <div className="divide-y divide-gray-50 max-h-125 overflow-y-auto">
             {loading ? (
               <div className="px-6 py-8 space-y-3">
                 {[1, 2, 3, 4, 5].map((i) => (

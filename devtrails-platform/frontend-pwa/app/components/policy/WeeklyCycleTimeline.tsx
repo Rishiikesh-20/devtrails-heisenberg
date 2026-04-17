@@ -52,9 +52,17 @@ export function WeeklyCycleTimeline({ cycleStart, status, waitingPeriodEndsAt }:
           {days.map((day, index) => {
             const dayStatus = status === "expired"
               ? "Expired"
-              : day.waiting ? "Waiting"
-              : day.covered ? "Covered"
-              : "Upcoming";
+              : status === "paused"
+                ? "Paused"
+                : status === "cancelled"
+                  ? "Cancelled"
+                  : status === "pending"
+                    ? "Pending"
+                    : day.waiting
+                      ? "Waiting"
+                      : day.covered
+                        ? "Covered"
+                        : "Upcoming";
 
             return (
               <article
@@ -79,6 +87,9 @@ export function WeeklyCycleTimeline({ cycleStart, status, waitingPeriodEndsAt }:
                 <p className={`text-xs mt-2 flex items-center gap-1.5 font-medium ${
                   dayStatus === "Covered" ? "text-teal-600"
                     : dayStatus === "Waiting" ? "text-amber-600"
+                    : dayStatus === "Paused" ? "text-amber-700"
+                    : dayStatus === "Cancelled" ? "text-rose-600"
+                    : dayStatus === "Pending" ? "text-slate-600"
                     : dayStatus === "Expired" ? "text-red-500"
                     : "text-gray-400"
                 }`}>

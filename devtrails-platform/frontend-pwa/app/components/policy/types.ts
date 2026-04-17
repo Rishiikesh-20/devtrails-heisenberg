@@ -1,4 +1,10 @@
-export type PolicyStatus = "active" | "waiting" | "expired";
+export type PolicyStatus =
+  | "pending"
+  | "waiting"
+  | "active"
+  | "paused"
+  | "cancelled"
+  | "expired";
 
 export type PolicyWaitingPeriod = {
   applies: boolean;

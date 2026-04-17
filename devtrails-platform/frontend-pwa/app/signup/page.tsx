@@ -5,8 +5,8 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Eye, EyeOff, Shield, CheckCircle } from "lucide-react";
 import { useToast } from "../components/ui/ToastProvider";
-import { setSignupDraft } from "../lib/api";
-import type { SignupDraft } from "../lib/types";
+import { apiPost, setSignupDraft, setUser } from "../lib/api";
+import type { SignupDraft, SignupResponse } from "../lib/types";
 
 const initialForm: SignupDraft = {
   first_name: "",
@@ -28,7 +28,7 @@ export default function SignupPage() {
     setForm((prev) => ({ ...prev, [field]: value }));
   };
 
-  const onSubmit = (event: React.FormEvent<HTMLFormElement>) => {
+  const onSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
 
     if (
@@ -53,11 +53,24 @@ export default function SignupPage() {
 
     setSubmitting(true);
     try {
+      const res = await apiPost<SignupResponse>("/api/v1/signup", {
+        first_name: form.first_name.trim(),
+        last_name: form.last_name.trim(),
+        email: form.email.trim().toLowerCase(),
+        phone: form.phone.trim(),
+        password,
+      });
+
+      setUser(res.user);
       setSignupDraft(form);
-      addToast("Account created! Let's set up your protection.", "success");
+      addToast(res.message || "Account created! Let's set up your protection.", "success");
       router.push("/onboarding");
-    } catch {
-      addToast("Unable to continue signup right now. Please try again.", "error");
+    } catch (err) {
+      addToast(
+        err instanceof Error ? err.message : "Unable to continue signup right now. Please try again.",
+        "error",
+      );
+    } finally {
       setSubmitting(false);
     }
   };

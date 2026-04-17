@@ -15,49 +15,51 @@ import {
 } from "lucide-react";
 import { PageShell } from "../components/ui/PageShell";
 import { useToast } from "../components/ui/ToastProvider";
-import { getUser, getOnboarding, clearSession, apiGet } from "../lib/api";
+import { getUser, clearSession, apiGet, setUser } from "../lib/api";
 import { TIER_INFO, ZONES } from "../lib/constants";
-import type { WalletResponse } from "../lib/types";
+import type { ProfileResponse, WalletResponse } from "../lib/types";
 
 export default function ProfilePage() {
   const router = useRouter();
   const { addToast } = useToast();
-  const [user, setUserState] = useState<any>(null);
-  const [onboarding, setOnboardingState] = useState<any>(null);
-  const [mounted, setMounted] = useState(false);
+  const [profile, setProfile] = useState<ProfileResponse | null>(null);
   const [walletBalance, setWalletBalance] = useState<number>(0);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const u = getUser();
-    const o = getOnboarding();
-    setUserState(u);
-    setOnboardingState(o);
-    setMounted(true);
+    const sessionUser = getUser();
 
-    if (!u) {
+    if (!sessionUser) {
       router.replace("/login");
       return;
     }
 
     const controller = new AbortController();
-    apiGet<WalletResponse>(
-      `/wallet?user_id=${encodeURIComponent(u.id)}`,
-      controller.signal,
-    )
-      .then((data) => setWalletBalance(data.balance ?? 0))
-      .catch(() => {})
+    Promise.allSettled([
+      apiGet<ProfileResponse>(`/api/v1/profile?user_id=${encodeURIComponent(sessionUser.id)}`, controller.signal),
+      apiGet<WalletResponse>(`/wallet?user_id=${encodeURIComponent(sessionUser.id)}`, controller.signal),
+    ])
+      .then(([profileResult, walletResult]) => {
+        if (profileResult.status === "fulfilled") {
+          setProfile(profileResult.value);
+          setUser(profileResult.value);
+        } else {
+          setProfile(sessionUser as ProfileResponse);
+        }
+        if (walletResult.status === "fulfilled") {
+          setWalletBalance(walletResult.value.balance ?? 0);
+        }
+      })
       .finally(() => setLoading(false));
 
     return () => controller.abort();
   }, [router]);
 
-  if (!mounted) return null;
-  if (!user) return null;
+  if (!profile) return null;
 
-  const tier = TIER_INFO[user.tier] ?? TIER_INFO[3];
-  const zoneName = ZONES.find((z) => z.value === user.zone)?.label ?? user.zone;
-  const premium = user.pricing_breakdown?.final_premium ?? user.weekly_premium ?? 0;
+  const tier = TIER_INFO[profile.tier as 1 | 2 | 3] ?? TIER_INFO[3];
+  const zoneName = ZONES.find((z) => z.value === profile.zone)?.label ?? profile.zone;
+  const premium = profile.pricing_breakdown?.final_premium ?? profile.weekly_premium ?? 0;
 
   const handleLogout = () => {
     clearSession();
@@ -84,11 +86,11 @@ export default function ProfilePage() {
             </div>
             <div>
               <h2 className="text-lg font-bold text-gray-900">
-                {onboarding?.full_name ?? "Delivery Partner"}
+                {profile.full_name || "Delivery Partner"}
               </h2>
               <p className="text-sm text-gray-400 flex items-center gap-1.5 mt-0.5">
                 <Mail size={12} strokeWidth={1.5} />
-                {user.email}
+                {profile.email}
               </p>
             </div>
           </div>
@@ -101,7 +103,7 @@ export default function ProfilePage() {
             <InfoRow
               icon={<Clock size={16} />}
               label="Shift"
-              value={`${onboarding?.shift_start ?? "—"} — ${onboarding?.shift_end ?? "—"}`}
+              value={`${profile.shift_start ?? "—"} — ${profile.shift_end ?? "—"}`}
             />
             <InfoRow
               icon={<Shield size={16} />}
@@ -112,7 +114,7 @@ export default function ProfilePage() {
                     className="w-2 h-2 rounded-full"
                     style={{ backgroundColor: tier.color }}
                   />
-                  Tier {user.tier} — {tier.name}
+                  Tier {profile.tier} — {tier.name}
                 </span>
               }
             />
@@ -120,6 +122,16 @@ export default function ProfilePage() {
               icon={<Zap size={16} />}
               label="Max Payout"
               value={tier.maxPayout}
+            />
+            <InfoRow
+              icon={<Shield size={16} />}
+              label="Policy"
+              value={profile.policy_status ? profile.policy_status.toUpperCase() : "PENDING"}
+            />
+            <InfoRow
+              icon={<Shield size={16} />}
+              label="Policy Number"
+              value={profile.policy_number ?? "Generating..."}
             />
           </div>
         </div>
@@ -143,11 +155,11 @@ export default function ProfilePage() {
             </div>
           </div>
 
-          {user.pricing_breakdown?.reason && (
+          {profile.pricing_breakdown?.reason && (
             <div className="mt-4 rounded-xl bg-gray-50 border border-gray-100 p-4">
               <p className="text-[10px] uppercase tracking-wider text-gray-400 mb-1">AI Reasoning</p>
               <p className="text-sm text-gray-600 leading-relaxed">
-                {user.pricing_breakdown.reason}
+                {profile.pricing_breakdown.reason}
               </p>
             </div>
           )}

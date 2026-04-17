@@ -5,9 +5,9 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft, Sparkles, CheckCircle, Shield, CloudRain, ServerOff, ShieldAlert, TrafficCone, Fuel } from "lucide-react";
 import { useToast } from "../components/ui/ToastProvider";
-import { getUser } from "../lib/api";
+import { apiPost, getUser, setUser } from "../lib/api";
 import { TIER_INFO } from "../lib/constants";
-import type { RegisterResponse } from "../lib/types";
+import type { PolicyActionResponse, RegisterResponse } from "../lib/types";
 
 const COVERAGE_ICONS = {
   1: [CloudRain, ServerOff],
@@ -25,6 +25,7 @@ export default function PricingPage() {
   const { addToast } = useToast();
   const [data, setData] = useState<RegisterResponse | null>(null);
   const [accepted, setAccepted] = useState(false);
+  const [activating, setActivating] = useState(false);
 
   useEffect(() => {
     const user = getUser();
@@ -35,10 +36,28 @@ export default function PricingPage() {
     setData(user);
   }, [router]);
 
-  const handleAccept = () => {
-    setAccepted(true);
-    addToast("Protection activated! Your wallet is now live. 🛡️", "success");
-    setTimeout(() => router.push("/dashboard"), 800);
+  const handleAccept = async () => {
+    if (!data?.id || activating || accepted) {
+      return;
+    }
+
+    setActivating(true);
+    try {
+      const res = await apiPost<PolicyActionResponse>("/api/v1/policy/activate", {
+        user_id: data.id,
+        auto_renew_enabled: true,
+      });
+
+      setAccepted(true);
+      setData(res.user);
+      setUser(res.user);
+      addToast(res.message || "Protection activated! Your wallet is now live.", "success");
+      setTimeout(() => router.push("/dashboard"), 700);
+    } catch (err) {
+      addToast(err instanceof Error ? err.message : "Unable to activate protection now.", "error");
+    } finally {
+      setActivating(false);
+    }
   };
 
   if (!data) {
@@ -193,7 +212,7 @@ export default function PricingPage() {
             type="button"
             id="pricing-accept"
             onClick={handleAccept}
-            disabled={accepted}
+            disabled={accepted || activating}
             className="w-full inline-flex items-center justify-center gap-2 bg-electric hover:bg-electric-600 text-white font-semibold text-sm py-3.5 rounded-xl transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
           >
             {accepted ? (
@@ -201,6 +220,8 @@ export default function PricingPage() {
                 <CheckCircle size={16} />
                 Protection Activated!
               </>
+            ) : activating ? (
+              "Activating protection..."
             ) : (
               "Accept & Activate Protection →"
             )}

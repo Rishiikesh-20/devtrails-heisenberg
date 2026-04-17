@@ -23,6 +23,7 @@ import (
 	"github.com/joho/godotenv"
 	"github.com/redis/go-redis/v9"
 	"github.com/segmentio/kafka-go"
+	"golang.org/x/crypto/bcrypt"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
@@ -55,19 +56,31 @@ type App struct {
 }
 
 type User struct {
-	ID            string    `gorm:"type:uuid;primaryKey" json:"id"`
-	Email         string    `gorm:"uniqueIndex;not null" json:"email"`
-	FullName      string    `gorm:"not null" json:"full_name"`
-	Zone          string    `gorm:"index;not null" json:"zone"`
-	ShiftStart    string    `gorm:"not null" json:"shift_start"`
-	ShiftEnd      string    `gorm:"not null" json:"shift_end"`
-	ShiftStatus   string    `gorm:"index;not null;default:'inactive'" json:"shift_status"`
-	Active        bool      `gorm:"index;default:true" json:"active"`
-	RiskTier      int       `gorm:"not null;default:3" json:"risk_tier"`
-	WeeklyPremium float64   `gorm:"type:numeric(10,2);not null;default:0" json:"weekly_premium"`
-	WagePerHour   float64   `gorm:"type:numeric(10,2);not null;default:150" json:"wage_per_hour"`
-	CreatedAt     time.Time `json:"created_at"`
-	UpdatedAt     time.Time `json:"updated_at"`
+	ID                string     `gorm:"type:uuid;primaryKey" json:"id"`
+	Email             string     `gorm:"uniqueIndex;not null" json:"email"`
+	FullName          string     `gorm:"not null" json:"full_name"`
+	Phone             string     `gorm:"type:text" json:"phone,omitempty"`
+	Zone              string     `gorm:"index;not null" json:"zone"`
+	ShiftStart        string     `gorm:"not null" json:"shift_start"`
+	ShiftEnd          string     `gorm:"not null" json:"shift_end"`
+	ShiftStatus       string     `gorm:"index;not null;default:'inactive'" json:"shift_status"`
+	Active            bool       `gorm:"index;default:true" json:"active"`
+	RiskTier          int        `gorm:"not null;default:3" json:"risk_tier"`
+	WeeklyPremium     float64    `gorm:"type:numeric(10,2);not null;default:0" json:"weekly_premium"`
+	WagePerHour       float64    `gorm:"type:numeric(10,2);not null;default:150" json:"wage_per_hour"`
+	PasswordHash      string     `gorm:"type:text" json:"-"`
+	PolicyNumber      string     `gorm:"type:text;index" json:"policy_number,omitempty"`
+	PolicyStatus      string     `gorm:"type:text;not null;default:'pending'" json:"policy_status"`
+	PolicyActivatedAt *time.Time `json:"policy_activated_at,omitempty"`
+	PolicyWaitingUntil *time.Time `json:"policy_waiting_until,omitempty"`
+	PolicyCycleStartAt *time.Time `json:"policy_cycle_start_at,omitempty"`
+	PolicyCycleEndAt   *time.Time `json:"policy_cycle_end_at,omitempty"`
+	PolicyNextRenewalAt *time.Time `json:"policy_next_renewal_at,omitempty"`
+	AutoRenewEnabled  bool       `gorm:"not null;default:true" json:"auto_renew_enabled"`
+	PolicyPausedAt    *time.Time `json:"policy_paused_at,omitempty"`
+	PolicyCancelledAt *time.Time `json:"policy_cancelled_at,omitempty"`
+	CreatedAt         time.Time  `json:"created_at"`
+	UpdatedAt         time.Time  `json:"updated_at"`
 }
 
 type RegisterRequest struct {
@@ -355,16 +368,36 @@ func run() error {
 	router.GET("/health", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"status": "ok", "service": "backend-go-core-api"})
 	})
+	router.POST("/api/v1/signup", app.signupUser)
 	router.POST("/api/v1/register", app.registerUser)
 	router.POST("/api/v1/login", app.loginUser)
+	router.GET("/api/v1/profile", app.getProfile)
+	router.GET("/api/v1/policy", app.getPolicySnapshot)
+	router.POST("/api/v1/policy/activate", app.activatePolicy)
+	router.POST("/api/v1/policy/renew", app.renewPolicy)
+	router.POST("/api/v1/policy/pause", app.pausePolicy)
+	router.POST("/api/v1/policy/cancel", app.cancelPolicy)
 	router.POST("/api/v1/risk/quote", app.quoteRisk)
 	router.POST("/api/v1/simulate-event", app.simulateDisruptionEvent)
 	router.POST("/api/v1/reports", app.submitReport)
 	router.GET("/api/v1/reports", app.listReports)
 	router.GET("/api/v1/admin/metrics", app.getAdminMetrics)
 	router.GET("/api/v1/weather", app.listWeather)
+	router.GET("/api/v1/wallet", app.getWalletV1)
+	router.GET("/api/v1/payouts", app.listPayoutsV1)
+	router.GET("/api/v1/payouts/support", app.getPayoutSupport)
+	router.GET("/api/v1/claims", app.listClaimsV1)
+	router.GET("/api/v1/claims/:claim_id", app.getClaimDetail)
+	router.POST("/api/v1/tier-upgrade", app.upgradeTier)
+	router.POST("/api/signup", app.signupUser)
 	router.POST("/api/register", app.registerUser)
 	router.POST("/api/login", app.loginUser)
+	router.GET("/api/profile", app.getProfile)
+	router.GET("/api/policy", app.getPolicySnapshot)
+	router.POST("/api/policy/activate", app.activatePolicy)
+	router.POST("/api/policy/renew", app.renewPolicy)
+	router.POST("/api/policy/pause", app.pausePolicy)
+	router.POST("/api/policy/cancel", app.cancelPolicy)
 	router.POST("/api/risk/quote", app.quoteRisk)
 	router.POST("/api/simulate-event", app.simulateDisruptionEvent)
 	router.GET("/api/admin/metrics", app.getAdminMetrics)
@@ -375,6 +408,9 @@ func run() error {
 	router.GET("/api/wallet", app.getWallet)
 	router.GET("/api/payouts", app.listPayouts)
 	router.GET("/api/claims", app.listClaims)
+	router.GET("/api/payouts/support", app.getPayoutSupport)
+	router.GET("/api/claims/:claim_id", app.getClaimDetail)
+	router.POST("/api/tier-upgrade", app.upgradeTier)
 	router.GET("/api/v1/isitdown", app.checkDowntime)
 	srv := &http.Server{
 		Addr:              ":" + cfg.Port,
@@ -416,6 +452,16 @@ func (a *App) registerUser(c *gin.Context) {
 		return
 	}
 
+	email := normalizeEmail(req.Email)
+	fullName := strings.TrimSpace(req.FullName)
+	zone := normalizeZone(req.Zone)
+	shiftStart := strings.TrimSpace(req.ShiftStart)
+	shiftEnd := strings.TrimSpace(req.ShiftEnd)
+	if fullName == "" || zone == "" || shiftStart == "" || shiftEnd == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "full_name, zone, shift_start and shift_end are required"})
+		return
+	}
+
 	wagePerHour := defaultWagePerHour
 	if req.WagePerHour != nil {
 		if *req.WagePerHour < 0 {
@@ -425,29 +471,71 @@ func (a *App) registerUser(c *gin.Context) {
 		wagePerHour = *req.WagePerHour
 	}
 
-	tier, premium, err := a.fetchTierFromPython(c.Request.Context(), req.Zone, req.ShiftStart, req.ShiftEnd)
+	tier, premium, err := a.fetchTierFromPython(c.Request.Context(), zone, shiftStart, shiftEnd)
 	if err != nil {
-		c.JSON(http.StatusBadGateway, gin.H{"error": "risk-tier service unavailable", "details": err.Error()})
+		log.Printf("risk-tier service unavailable for register email=%s err=%v; using fallback tier", email, err)
+		tier = 3
+		premium = 179
+	}
+
+	var existing User
+	err = a.db.WithContext(c.Request.Context()).
+		Where("LOWER(email) = ?", email).
+		First(&existing).Error
+	if err == nil {
+		existing.FullName = fullName
+		existing.Zone = zone
+		existing.ShiftStart = shiftStart
+		existing.ShiftEnd = shiftEnd
+		existing.ShiftStatus = "active"
+		existing.Active = true
+		existing.RiskTier = tier
+		existing.WeeklyPremium = premium
+		existing.WagePerHour = wagePerHour
+		ensurePolicyDefaults(&existing)
+
+		if err := a.db.WithContext(c.Request.Context()).Save(&existing).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update user", "details": err.Error()})
+			return
+		}
+
+		if err := a.refreshPolicyLifecycle(c.Request.Context(), &existing); err != nil {
+			log.Printf("policy lifecycle refresh failed for user=%s err=%v", existing.ID, err)
+		}
+
+		c.JSON(http.StatusOK, buildAuthPayload(existing))
+		return
+	}
+	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load user", "details": err.Error()})
 		return
 	}
 
 	user := User{
-		ID:            uuid.NewString(),
-		Email:         req.Email,
-		FullName:      req.FullName,
-		Zone:          req.Zone,
-		ShiftStart:    req.ShiftStart,
-		ShiftEnd:      req.ShiftEnd,
-		ShiftStatus:   "active",
-		Active:        true,
-		RiskTier:      tier,
-		WeeklyPremium: premium,
-		WagePerHour:   wagePerHour,
+		ID:              uuid.NewString(),
+		Email:           email,
+		FullName:        fullName,
+		Zone:            zone,
+		ShiftStart:      shiftStart,
+		ShiftEnd:        shiftEnd,
+		ShiftStatus:     "active",
+		Active:          true,
+		RiskTier:        tier,
+		WeeklyPremium:   premium,
+		WagePerHour:     wagePerHour,
+		PolicyStatus:    policyStatusPending,
+		PolicyNumber:    generatePolicyNumber(),
+		AutoRenewEnabled: true,
 	}
+	ensurePolicyDefaults(&user)
 
 	if err := a.db.WithContext(c.Request.Context()).Create(&user).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create user", "details": err.Error()})
 		return
+	}
+
+	if err := a.refreshPolicyLifecycle(c.Request.Context(), &user); err != nil {
+		log.Printf("policy lifecycle refresh failed for user=%s err=%v", user.ID, err)
 	}
 
 	c.JSON(http.StatusCreated, buildAuthPayload(user))
@@ -478,7 +566,20 @@ func (a *App) loginUser(c *gin.Context) {
 		return
 	}
 
-	// This MVP does not persist password hashes yet; keep route contract for frontend compatibility.
+	if strings.TrimSpace(user.PasswordHash) == "" {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "account setup incomplete, please sign up again"})
+		return
+	}
+
+	if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(req.Password)); err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid email or password"})
+		return
+	}
+
+	if err := a.refreshPolicyLifecycle(c.Request.Context(), &user); err != nil {
+		log.Printf("policy lifecycle refresh failed for user=%s err=%v", user.ID, err)
+	}
+
 	c.JSON(http.StatusOK, buildAuthPayload(user))
 }
 
@@ -590,12 +691,23 @@ func buildAuthPayload(user User) gin.H {
 		"id":                user.ID,
 		"email":             user.Email,
 		"full_name":         user.FullName,
+		"phone":             user.Phone,
 		"zone":              user.Zone,
 		"shift_start":       user.ShiftStart,
 		"shift_end":         user.ShiftEnd,
+		"shift_status":      user.ShiftStatus,
+		"active":            user.Active,
 		"tier":              user.RiskTier,
 		"weekly_premium":    user.WeeklyPremium,
 		"wage_per_hour":     user.WagePerHour,
+		"policy_number":     user.PolicyNumber,
+		"policy_status":     user.PolicyStatus,
+		"auto_renew_enabled": user.AutoRenewEnabled,
+		"policy_activated_at": user.PolicyActivatedAt,
+		"policy_waiting_until": user.PolicyWaitingUntil,
+		"policy_cycle_start_at": user.PolicyCycleStartAt,
+		"policy_cycle_end_at": user.PolicyCycleEndAt,
+		"policy_next_renewal_at": user.PolicyNextRenewalAt,
 		"pricing_breakdown": buildPricingBreakdown(user.RiskTier, user.WeeklyPremium),
 	}
 }
@@ -1111,7 +1223,7 @@ func (a *App) listWeather(c *gin.Context) {
 
 type submitReportRequest struct {
 	UserID   string `json:"user_id" binding:"required"`
-	Zone     string `json:"zone" binding:"required"`
+	Zone     string `json:"zone"`
 	Category string `json:"category" binding:"required"`
 	Severity int    `json:"severity" binding:"required"`
 	Details  string `json:"details"`
@@ -1124,13 +1236,35 @@ func (a *App) submitReport(c *gin.Context) {
 		return
 	}
 
+	zone, err := a.resolveUserZone(c, req.UserID, req.Zone)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	category := normalizeReportCategory(req.Category)
+	if category == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "category is required"})
+		return
+	}
+
+	severity := req.Severity
+	if severity < 1 {
+		severity = 1
+	}
+	if severity > 5 {
+		severity = 5
+	}
+
+	details := strings.TrimSpace(req.Details)
+
 	report := &reports.UserReport{
 		ID:         uuid.NewString(),
-		UserID:     req.UserID,
-		Zone:       req.Zone,
-		Category:   req.Category,
-		Severity:   req.Severity,
-		Details:    req.Details,
+		UserID:     strings.TrimSpace(req.UserID),
+		Zone:       zone,
+		Category:   category,
+		Severity:   severity,
+		Details:    details,
 		ReportedAt: time.Now().UTC(),
 		CreatedAt:  time.Now().UTC(),
 	}
@@ -1155,34 +1289,57 @@ func (a *App) submitReport(c *gin.Context) {
 }
 
 func (a *App) listReports(c *gin.Context) {
-	limitStr := c.Query("limit")
-	limit, _ := strconv.Atoi(limitStr)
-	if limit == 0 {
-		limit = 50
-	}
+	limit := parseListLimit(c)
+	offset := parseListOffset(c)
+	userID := strings.TrimSpace(c.Query("user_id"))
 
 	filters := reports.ReportQueryFilters{
-		Limit: limit,
+		Limit:  limit,
+		Offset: offset,
+	}
+	if userID != "" {
+		filters.UserID = &userID
 	}
 
 	if zone := c.Query("zone"); zone != "" {
-		filters.Zone = &zone
+		resolvedZone := normalizeZone(zone)
+		if isPlaceholderZone(zone) && userID != "" {
+			if userZone, err := a.resolveUserZone(c, userID, zone); err == nil {
+				resolvedZone = userZone
+			}
+		}
+		if !isPlaceholderZone(resolvedZone) {
+			filters.Zone = &resolvedZone
+		}
 	}
 	if cat := c.Query("category"); cat != "" {
-		filters.Category = &cat
+		normalizedCategory := normalizeReportCategory(cat)
+		if normalizedCategory != "" {
+			filters.Category = &normalizedCategory
+		}
 	}
 	if status := c.Query("status"); status != "" {
-		filters.Status = &status
+		normalizedStatus := strings.ToLower(strings.TrimSpace(status))
+		if normalizedStatus != "" {
+			filters.Status = &normalizedStatus
+		}
 	}
 
-	res, err := reports.QueryReports(a.db.WithContext(c.Request.Context()), filters)
+	res, total, err := reports.QueryReports(a.db.WithContext(c.Request.Context()), filters)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to query reports", "details": err.Error()})
 		return
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"data":  res,
+		"data": res,
+		"pagination": gin.H{
+			"limit":    limit,
+			"offset":   offset,
+			"returned": len(res),
+			"total":    total,
+			"has_more": int64(offset+len(res)) < total,
+		},
 		"count": len(res),
 	})
 }

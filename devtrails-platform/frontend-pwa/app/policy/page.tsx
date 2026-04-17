@@ -1,12 +1,18 @@
+"use client";
+
+import React, { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { ShieldCheck, CloudRain, ServerOff, ShieldAlert, TrafficCone, Fuel, Calculator, RotateCcw } from "lucide-react";
 import { PageShell } from "../components/ui/PageShell";
-import { mockWorkerPolicy } from "../components/policy/mockPolicyData";
 import { PolicyStatusCard } from "../components/policy/PolicyStatusCard";
 import { WeeklyCycleTimeline } from "../components/policy/WeeklyCycleTimeline";
 import { WaitingPeriodBanner } from "../components/policy/WaitingPeriodBanner";
 import { CoverageCapsCard } from "../components/policy/CoverageCapsCard";
 import { RenewalActionsPanel } from "../components/policy/RenewalActionsPanel";
 import { formatInr, formatLongDate } from "../components/policy/policyFormatters";
+import { useToast } from "../components/ui/ToastProvider";
+import { apiGet, apiPost, getUser, setUser } from "../lib/api";
+import type { PolicyActionResponse, PolicySnapshotResponse, RegisterResponse } from "../lib/types";
 
 const COVERED_TRIGGERS = [
   {
@@ -57,7 +63,110 @@ const COVERED_TRIGGERS = [
 ];
 
 export default function PolicyPage() {
-  const policy = mockWorkerPolicy;
+  const router = useRouter();
+  const { addToast } = useToast();
+  const [sessionUser, setSessionUser] = useState<RegisterResponse | null>(null);
+  const [policy, setPolicy] = useState<PolicySnapshotResponse | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [busyAction, setBusyAction] = useState<"renew" | "pause" | "cancel" | null>(null);
+
+  useEffect(() => {
+    const user = getUser();
+    if (!user) {
+      router.replace("/login");
+      return;
+    }
+
+    setSessionUser(user);
+    const controller = new AbortController();
+
+    apiGet<PolicySnapshotResponse>(
+      `/api/v1/policy?user_id=${encodeURIComponent(user.id)}`,
+      controller.signal,
+    )
+      .then((snapshot) => setPolicy(snapshot))
+      .catch((err) => {
+        addToast(err instanceof Error ? err.message : "Unable to load your policy snapshot.", "error");
+      })
+      .finally(() => setLoading(false));
+
+    return () => controller.abort();
+  }, [addToast, router]);
+
+  const runPolicyAction = async (action: "renew" | "pause" | "cancel") => {
+    if (!sessionUser?.id || busyAction) {
+      return;
+    }
+
+    setBusyAction(action);
+    try {
+      const res = await apiPost<PolicyActionResponse>(`/api/v1/policy/${action}`, {
+        user_id: sessionUser.id,
+      });
+      setPolicy(res.policy);
+      setSessionUser(res.user);
+      setUser(res.user);
+      addToast(res.message || "Policy updated successfully.", "success");
+    } catch (err) {
+      addToast(err instanceof Error ? err.message : "Unable to update policy right now.", "error");
+    } finally {
+      setBusyAction(null);
+    }
+  };
+
+  const statusDotClass: Record<PolicySnapshotResponse["status"], string> = {
+    pending: "bg-slate-500",
+    waiting: "bg-amber-500",
+    active: "bg-teal-500",
+    paused: "bg-amber-700",
+    cancelled: "bg-rose-600",
+    expired: "bg-red-500",
+  };
+
+  const statusTextClass: Record<PolicySnapshotResponse["status"], string> = {
+    pending: "text-slate-600",
+    waiting: "text-amber-600",
+    active: "text-teal-600",
+    paused: "text-amber-700",
+    cancelled: "text-rose-600",
+    expired: "text-red-600",
+  };
+
+  if (loading) {
+    return (
+      <PageShell>
+        <div className="max-w-6xl mx-auto px-5 py-8 pb-24 md:pb-8">
+          <div className="premium-card p-8 animate-pulse space-y-4">
+            <div className="h-4 bg-gray-100 rounded w-40" />
+            <div className="h-7 bg-gray-100 rounded w-72" />
+            <div className="h-28 bg-gray-100 rounded-xl" />
+          </div>
+        </div>
+      </PageShell>
+    );
+  }
+
+  if (!policy) {
+    return (
+      <PageShell>
+        <div className="max-w-3xl mx-auto px-5 py-10 pb-24 md:pb-8">
+          <div className="premium-card p-6 space-y-4">
+            <h1 className="text-xl font-bold text-gray-900">Unable to load policy</h1>
+            <p className="text-sm text-gray-600">
+              We could not fetch your latest policy snapshot. Please try again.
+            </p>
+            <button
+              type="button"
+              onClick={() => router.refresh()}
+              className="inline-flex items-center justify-center rounded-lg bg-electric px-4 py-2 text-sm font-semibold text-white hover:bg-electric-600 transition-colors"
+            >
+              Retry
+            </button>
+          </div>
+        </div>
+      </PageShell>
+    );
+  }
 
   return (
     <PageShell>
@@ -87,14 +196,18 @@ export default function PolicyPage() {
           <article className="premium-card p-5">
             <p className="text-[10px] uppercase tracking-wider text-gray-600">Status</p>
             <div className="flex items-center gap-2 mt-2">
-              <span className="w-2 h-2 rounded-full bg-teal-500 animate-pulse" />
-              <p className="text-sm font-semibold text-teal-600 capitalize">{policy.status}</p>
+              <span className={`w-2 h-2 rounded-full ${statusDotClass[policy.status]} ${policy.status === "active" ? "animate-pulse" : ""}`} />
+              <p className={`text-sm font-semibold capitalize ${statusTextClass[policy.status]}`}>{policy.status}</p>
             </div>
           </article>
 
           <article className="premium-card p-5">
             <p className="text-[10px] uppercase tracking-wider text-gray-600">Next Renewal</p>
-            <p className="text-xs text-gray-600 mt-2">Auto-renews {new Date(policy.nextRenewalDate).toLocaleDateString('en-IN', { weekday: 'short', day: '2-digit', month: 'short' })}</p>
+            <p className="text-xs text-gray-600 mt-2">
+              {policy.autoRenewEnabled
+                ? `Auto-renews ${formatLongDate(policy.nextRenewalDate)}`
+                : `Auto-renew paused. Last cycle ends ${formatLongDate(policy.nextRenewalDate)}`}
+            </p>
           </article>
 
           <article className="premium-card p-5">
@@ -178,6 +291,11 @@ export default function PolicyPage() {
             <RenewalActionsPanel
               nextRenewalDate={policy.nextRenewalDate}
               autoRenewEnabled={policy.autoRenewEnabled}
+              onRenew={() => void runPolicyAction("renew")}
+              onPause={() => void runPolicyAction("pause")}
+              onCancel={() => void runPolicyAction("cancel")}
+              busyAction={busyAction}
+              disabled={!sessionUser}
             />
 
             {/* Covered Triggers with Severity Factors */}
