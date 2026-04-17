@@ -386,6 +386,7 @@ Because our platform guarantees payouts in 10 minutes, fraud detection must be i
 | **Next.js (React)** | Server-side rendering, file-based routing, API routes |
 | **Tailwind CSS** | Utility-first responsive styling |
 | **Zustand** | Lightweight, performant state management |
+| **Leaflet** | Interactive geospatial mapping and real-time zone disruption visualization |
 | **PWA** | Zero-friction install — no app store required |
 
 ### 2. Edge & Authentication Layer
@@ -494,6 +495,7 @@ We chose a **Progressive Web App** over a native mobile app for three compelling
 
 ### Phase 5 — Polish & Deployment *In Progress*
 - [x] Next.js 15 PWA "Wallet Dashboard" and Developer Simulation Tools
+- [x] **Geospatial Signals Map** — Live oracle engine visualization with zone impact legends and source health panels
 - [ ] End-to-end integration mapping actual database models to frontend state
 - [ ] Global `docker-compose` networking polish across all isolated containers
 - [ ] Admin dashboard — claims monitor, FRS flag queue, premium pool health
@@ -512,6 +514,16 @@ With gig riders depending entirely on smooth workflows, any disruption means dev
   <img src="docs/images/fraud_gates_illustration.png" alt="Four-Gate AI Fraud Validation Engine" width="45%" />
 </div>
 
+<br/>
+
+<div align="center">
+  <h3>🗺️ Live Geospatial Signals Map</h3>
+  <!-- Replace the `src` with the actual path to your geospatial signals map image when ready -->
+  <img src="docs/images/Geo-image.jpeg" alt="Live Geospatial Signals Map" width="80%" style="border-radius: 8px; border: 1px solid #ddd;" />
+</div>
+
+<br/>
+
 ### Deep Dive into the Implemented Orchestration
 
 We broke the monolithic bottleneck constraint by successfully deploying five dedicated microservices communicating via **Kafka** and **REST**:
@@ -520,7 +532,7 @@ We broke the monolithic bottleneck constraint by successfully deploying five ded
 2. **The Intelligence Layer (Python FRS & AI Engine):** Instead of making our Go backend choke on heavy machine learning routines, we developed an isolated FastAPI Python microservice (`fraud-detection-engine`) and `ai-engine-python`. It instantly digests arrays of user metrics and generates risk assignments and immediate Fraud Risk Scores (0-100).
 3. **The Sensorial Oracle (Cron Service):** A python script running silently alongside the ecosystem, pulling local weather telemetry and screaming over the Kafka Bus when limits are breached (e.g. >15mm rain/hour).
 4. **Data Backbone (Postgres & Redis):** PostgreSQL stores ACID-compliant persistent wallets and policies. Redis guards Gate 1 of our Fraud pipeline with instantaneous `SETNX` constraints rejecting duplicated claims hashed dynamically via `worker_id` + `event`.
-5. **Interactive Edge (Next.js Application):** A blazingly fast Next.js 15 PWA providing an accessible entry portal and mock dashboard simulation controls so we can trigger these pipeline tests with real confidence in the frontend.
+5. **Interactive Edge (Next.js Application):** A blazingly fast Next.js 15 PWA providing an accessible entry portal and mock dashboard simulation controls so we can trigger these pipeline tests with real confidence in the frontend. It now also features a comprehensive **Geospatial Signals Map**, offering live oracle engine visualization, affected region searching, zone impact legends, and real-time source health panels.
 
 ### 🛡️ The 4-Gate Fraud Engine is ALIVE
 Our most prized achievement is the completed FRS Engine implementation. Because parametric insurance moves money within 10 minutes, manual auditing is dead. We solved this with an aggressive multi-gate API filtering claims.
@@ -529,6 +541,19 @@ Our most prized achievement is the completed FRS Engine implementation. Because 
 - A cluster of 5 workers claiming a disruption from the exact same Device ID instantly sets off the massive graph correlation algorithm at **Gate 4 (The Network Mapper)**.
 
 Our tests confirm this engine actively blocks collusion and manipulation instantaneously, allowing true 10-minute seamless payouts to reliable riders.
+
+---
+
+## ✅ Recently Resolved Issues & Enhancements
+We actively prioritize and resolve system fidelity gaps. The following key fixes were recently implemented to guarantee precision across our app modules:
+
+1. **Geolocation-Based Onboarding:** The onboarding page now utilizes actual user geolocation instead of a static dropdown menu of predefined famous cities. 
+2. **Tier-Wise Subscriptions:** Aligned the subscription interface to mirror the core documentation, explicitly mapping features into Hotstar/Netflix-style tiers directly for the user's choosing.
+3. **Payment Simulation Integration:** Successfully implemented the end-to-end payment simulation protocols.
+4. **Context-Aware Dynamic Data Verification:** Cleaned up local analytics scopes. Users will now exclusively see data matching their active physical location (e.g. Coimbatore locations will show localized oracle data, filtering out irrelevant region noise like Delhi).
+5. **Strict Role-Based Access Control (RBAC):** Fixed authorization leaks so standard users can no longer forcefully navigate to elevated `/admin` routing scopes.
+6. **Backend Formula Harmonisation:** Standardized and corrected the backend payout calculation mechanism to correctly reflect our original, documented statistical formula.
+7. **API vs Documentation Consistency:** Resolved discrepancies regarding integration claims. The actual API endpoints utilized in the codebase now correspond and strictly reflect the integrations outlined in our official operational documents.
 
 ---
 
@@ -574,6 +599,7 @@ Open [http://localhost:3000](http://localhost:3000) in your browser.
 | :--- | :--- |
 | `/` | Landing page — product overview, personas, and oracle explainer |
 | `/demo` | Interactive mock dashboard — simulate disruptions and watch payouts fire |
+| `/signals-map` | Geospatial Signals Map — Live oracle engine visualization tracking affected zones and data source health |
 
 
 
